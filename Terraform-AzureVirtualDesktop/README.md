@@ -30,7 +30,7 @@ There are four files in the repo for usage.<br>
 <!-- CONTACT -->
 ## Contact
 
-Alex ter Neuzen - alex.terneuzen@rapidcircle.com
+Alex ter Neuzen - info@gettothe.cloud
 
 
 <p align="right">(<a href="#Rapid-Circle-PowerShell-Module">back to top</a>)</p>
