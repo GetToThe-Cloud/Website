@@ -1,4 +1,4 @@
-# Azure Virtual Desktop deployment with ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white)
+# ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) Azure Virtual Desktop deployment
 
 Read more about these files at the website: https://www.gettothe.cloud
 
