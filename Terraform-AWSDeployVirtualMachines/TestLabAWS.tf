@@ -1,7 +1,7 @@
 provider "aws" {
   region = var.location
-  access_key = "AKIA4J67JDBYN7XICGQ7"
-  secret_key = "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"
+  access_key = ""
+  secret_key = ""
 }
 
 variable "DCcomputername" {
