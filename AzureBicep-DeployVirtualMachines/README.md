@@ -2,35 +2,22 @@
 
 Read more about these files at the website: https://www.gettothe.cloud/azure-bicep-deploy-virtual-machines/
 
-# Usage
-```powershell
-terraform init
-```
-```powershell
-terraform plan
-```
-```powershell
-terraform deploy
-```
-
 # Files
 There are four files in the repo for usage.<br>
 <br>
-- provider.tf
-- deploy.tf
-- results.tf
-- variables.tf
+- bicep-deploy.ps1
+- dc.bicep
+- ex.bicep
+- win11.bicep
+- azuredeploy.parameters.json
 
 ## Roadmap
 
-- [ ] Add virtual machines to deploy
-- [ ] Add resource group to deployment
+- [ ] Add download of Exchange iso to vm
 
 <!-- CONTACT -->
 ## Contact
 
 Alex ter Neuzen - info@gettothe.cloud
 
-
-<p align="right">(<a href="#Rapid-Circle-PowerShell-Module">back to top</a>)</p>
 
