@@ -4,40 +4,31 @@
 
 The code repository from GetToThe.Cloud website. All the generic scripts that are described are located here.
 
-# Usage
-```powershell
-Import-Module .\RapidCircle.psm1
-```
-
-## Functions
-
-The module contains multiple functions. 
-
 <!-- TABLE OF CONTENTS -->
 <details open>
   <summary>Table of Contents</summary>
   <ol>
     <li>
-      Module Management
+      Azure Bicep
       <ul>
-        <li><a href="#install-requirements">Install-Requirements</a></li>
-        <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
-        <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines</a></li>
+        <!-- <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
+        <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li> -->
       </ul>
     </li>
     <li>
-      Azure Active Directory
+      Terraform
       <ul>
-        <li><a href="#Get-ConditionalAccessPolicies">Get-ConditionalAccessPolicies</a></li>
-        <li><a href="#Import-ConditionalAccessPolicies">Import-ConditionalAccessPolicies</a></li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/Terraform-AzureVirtualDesktop">Azure Virtual Desktop deployment</a></li>
+        <!-- <li><a href="#Import-ConditionalAccessPolicies">Import-ConditionalAccessPolicies</a></li> -->
       </ul>
-    </li>    
+    <!-- </li>    
         <li>
       Tools
       <ul>
         <li><a href="#New-Password">New-Password</a></li>
       </ul>
-    </li>   
+    </li>    -->
   </ol>
 </details>
 
