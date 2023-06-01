@@ -1,4 +1,5 @@
-# ![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white) ![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white) Bicep | Deploy Virtual Machines
+# ![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white) Azure Bicep | Deploy Virtual Machines
+ ![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)
 
 Read more about these files at the website: https://www.gettothe.cloud/azure-bicep-deploy-virtual-machines/
 
