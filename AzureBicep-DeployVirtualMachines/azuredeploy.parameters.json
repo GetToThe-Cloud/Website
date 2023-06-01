@@ -6,7 +6,7 @@
         "value": "GetToTheCloudAdmin"
       },
       "vmAdminPassword": {
-        "value": "Welkom01!2020!!3344"
+        "value": "YOUROWNPASSWORD"
       },
       "addressPrefix": {
         "value": "10.10.0.0/16"
