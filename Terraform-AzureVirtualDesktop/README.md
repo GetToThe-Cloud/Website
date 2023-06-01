@@ -1,4 +1,4 @@
-# Azure Virtual Desktop deployment with Terraform
+# Azure Virtual Desktop deployment with Terraform ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white)
 ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white)<br>
 
 Read more about these files at the website: https://www.gettothe.cloud
