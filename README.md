@@ -12,7 +12,7 @@ For more information browse to https://www.gettothe.cloud
     <li>
       Azure Bicep
       <ul>
-        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines</a></li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines to Azure</a></li>
         <!-- <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
         <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li> -->
       </ul>
@@ -21,6 +21,7 @@ For more information browse to https://www.gettothe.cloud
       Terraform
       <ul>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/Terraform-AzureVirtualDesktop">Azure Virtual Desktop deployment</a></li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/Terraform-AWSDeployVirtualMachines">Deploy Virtual Machines to AWS</a></li>
         <!-- <li><a href="#Import-ConditionalAccessPolicies">Import-ConditionalAccessPolicies</a></li> -->
       </ul>
     <!-- </li>    
