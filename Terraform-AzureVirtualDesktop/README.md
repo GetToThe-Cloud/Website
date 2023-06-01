@@ -13,13 +13,19 @@ terraform plan
 terraform deploy
 ```
 
+# Files
+There are four files in the repo for usage.<br>
+<br>
+- provider.tf
+- deploy.tf
+- results.tf
+- variables.tf
 
 ## Roadmap
 
 - [ ] Add release of version
-- [ ] Exchange Online Inventory
-- [ ] Security Assessment Azure Active Directory
-- [ ] Rapid Circle security baseline inventory and apply
+- [ ] Add virtual machines to deploy
+- [ ] Add resource group to deployment
 
 <!-- CONTACT -->
 ## Contact
