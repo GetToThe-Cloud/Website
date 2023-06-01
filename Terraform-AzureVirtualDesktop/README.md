@@ -23,7 +23,6 @@ There are four files in the repo for usage.<br>
 
 ## Roadmap
 
-- [ ] Add release of version
 - [ ] Add virtual machines to deploy
 - [ ] Add resource group to deployment
 
