@@ -1,5 +1,5 @@
 # GetToThe.Cloud repository
-![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![powershell](https://img.shields.io/badge/module-Powershell-blue?style=for-the-badge&logo=PowerShell&logoColor=4FC08D)
+![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white)
 
 
 The "RapidCircle" PowerShell module is a versatile collection of functions designed to streamline and enhance day-to-day job tasks. With a wide range of capabilities, this module offers various utilities and automation tools to empower users in their work.
