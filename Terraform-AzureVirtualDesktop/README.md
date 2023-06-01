@@ -1,6 +1,6 @@
 # ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) Azure Virtual Desktop deployment
  ![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white)
- 
+
 Read more about these files at the website: https://www.gettothe.cloud
 
 # Usage
@@ -32,6 +32,4 @@ There are four files in the repo for usage.<br>
 
 Alex ter Neuzen - info@gettothe.cloud
 
-
-<p align="right">(<a href="#Rapid-Circle-PowerShell-Module">back to top</a>)</p>
 
