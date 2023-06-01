@@ -1,5 +1,5 @@
 # Rapid Circle PowerShell Module
-[![Terraform][Terraform]][terraform-url] <br>
+[Terraform][terraform-url] <br>
 
 The "RapidCircle" PowerShell module is a versatile collection of functions designed to streamline and enhance day-to-day job tasks. With a wide range of capabilities, this module offers various utilities and automation tools to empower users in their work.
 
