@@ -13,6 +13,8 @@ For more information browse to https://www.gettothe.cloud
       Azure Bicep
       <ul>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines to Azure</a></li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-LogicalNetworks">Add Logical Networks to Azure Local</a></li>
+        <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-MarketplaceImages">Add Marketplace Images to Azure Local Cluster</a></li>
         <!-- <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
         <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li> -->
       </ul>
