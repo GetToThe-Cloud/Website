@@ -15,9 +15,10 @@ For more information browse to https://www.gettothe.cloud
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines to Azure</a></li>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-LogicalNetworks">Add Logical Networks to Azure Local</a></li>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-MarketplaceImages">Add Marketplace Images to Azure Local Cluster</a></li>
-        <!-- <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
-        <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li> -->
       </ul>
+    </li>
+    <li>
+      <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/PowerShell-AzureLocal-CustomImage">Use PowerShell for custom images Azure Local</a></li>
     </li>
     <li>
       Terraform
