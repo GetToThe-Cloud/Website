@@ -18,7 +18,10 @@ For more information browse to https://www.gettothe.cloud
       </ul>
     </li>
     <li>
+      PowerShell
+      <ul>
       <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/PowerShell-AzureLocal-CustomImage">Use PowerShell for custom images Azure Local</a></li>
+      </ul>
     </li>
     <li>
       Terraform
