@@ -49,12 +49,12 @@ This schedule runs every Sunday at 3 AM UTC, ensuring regular maintenance withou
 | Parameter | Type | Description | Default |
 |-----------|------|-------------|---------|
 | **environmentName** | string | Target environment (Development/Test/Production) | Production |
-| **subscriptionId** | string | Azure subscription ID | 2a234050-17d0-44a2-9755-08e59607bcd9 |
-| **resourceGroup** | string | HCI resource group name | azl-we-rsg-azl-koogaandezaan-01 |
-| **customLocationName** | string | Azure Arc custom location name | Koog-aan-de-Zaan |
-| **galleryName** | string | Azure Compute Gallery name | azlavdimages |
-| **imageDefinition** | string | Image definition name in the gallery | Win11 |
-| **imgResourceGroup** | string | Resource group containing the gallery | azl-we-rsg-avd-image-01 |
+| **subscriptionId** | string | Azure subscription ID |  |
+| **resourceGroup** | string | HCI resource group name |  |
+| **customLocationName** | string | Azure Arc custom location name |  |
+| **galleryName** | string | Azure Compute Gallery name |  |
+| **imageDefinition** | string | Image definition name in the gallery |  |
+| **imgResourceGroup** | string | Resource group containing the gallery |  |
 | **imagesToKeep** | number | Number of most recent images to retain | 1 |
 | **dryRun** | boolean | Preview mode without actual deletion | false |
 
