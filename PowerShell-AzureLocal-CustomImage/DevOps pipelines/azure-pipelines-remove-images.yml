@@ -1,0 +1,509 @@
+#============================================================
+# Azure DevOps Pipeline: Remove Old HCI Images (PowerShell)
+#============================================================
+# This pipeline automates the cleanup of old custom images from Azure Stack HCI
+# to maintain storage efficiency and retain only recent image versions.
+#
+# Prerequisites:
+# - Service Connection configured in Azure DevOps
+# - Az PowerShell modules (Az.Accounts, Az.Resources, Az.Compute, Az.StackHCI, Az.StackHCIVM)
+# - Permissions to delete images on HCI cluster
+#============================================================
+
+name: PS-Cleanup-HCI-Images-$(Date:yyyyMMdd)-$(Rev:r)
+
+trigger: none # Manual trigger only - prevents accidental deletions
+
+# schedules:
+# # Optional: Schedule to run cleanup weekly on Sunday at 3 AM UTC
+# - cron: "0 3 * * 0"
+#   displayName: Weekly image cleanup
+#   branches:
+#     include:
+#     - main
+#   always: true  # Run even if there are no code changes
+
+parameters:
+- name: environmentName
+  displayName: 'Target Environment'
+  type: string
+  default: 'Production'
+  values:
+  - 'Development'
+  - 'Test'
+  - 'Production'
+
+- name: subscriptionId
+  displayName: 'Azure Subscription ID'
+  type: string
+  default: ''
+
+- name: resourceGroup
+  displayName: 'HCI Resource Group'
+  type: string
+  default: ''
+
+- name: customLocationName
+  displayName: 'Custom Location Name'
+  type: string
+  default: ''
+
+- name: galleryName
+  displayName: 'Azure Compute Gallery Name'
+  type: string
+  default: ''
+
+- name: imageDefinition
+  displayName: 'Image Definition Name'
+  type: string
+  default: ''
+
+- name: imgResourceGroup
+  displayName: 'Gallery Resource Group'
+  type: string
+  default: ''
+
+- name: imagesToKeep
+  displayName: 'Number of Images to Keep'
+  type: number
+  default: 3
+
+- name: dryRun
+  displayName: 'Dry Run (Preview Only - No Deletion)'
+  type: boolean
+  default: false
+
+variables:
+- name: azureServiceConnection
+  value: 'azl-service-connection' # Update with your service connection name
+
+stages:
+- stage: ValidateEnvironment
+  displayName: 'Validate Environment & Modules'
+  jobs:
+  - job: PreflightChecks
+    displayName: 'Preflight Checks'
+    pool:
+      vmImage: 'windows-latest'
+
+    steps:
+    - task: PowerShell@2
+      displayName: 'Check PowerShell Version'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "PowerShell Environment Check" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
+          Write-Host "OS: $($PSVersionTable.OS)"
+          Write-Host "Platform: $($PSVersionTable.Platform)"
+
+    - task: AzurePowerShell@5
+      displayName: 'Verify and Install Required Modules'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "PowerShell Module Verification" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+
+          $requiredModules = @(
+            'Az.Accounts',
+            'Az.Compute',
+            'Az.Resources',
+            'Az.StackHCI',
+            'Az.StackHCIVM'
+          )
+
+          foreach ($moduleName in $requiredModules) {
+            Write-Host "`nChecking module: $moduleName" -ForegroundColor Yellow
+            $module = Get-Module -ListAvailable -Name $moduleName | Select-Object -First 1
+            
+            if ($module) {
+              Write-Host "  ✓ Found $moduleName version $($module.Version)" -ForegroundColor Green
+            } else {
+              Write-Host "  ⚠ Module $moduleName not found. Installing..." -ForegroundColor Yellow
+              try {
+                Install-Module -Name $moduleName -Force -AllowClobber -Scope CurrentUser -ErrorAction Stop
+                Write-Host "  ✓ Successfully installed $moduleName" -ForegroundColor Green
+              }
+              catch {
+                Write-Host "  ✗ Failed to install $moduleName : $($_.Exception.Message)" -ForegroundColor Red
+                exit 1
+              }
+            }
+          }
+
+          Write-Host "`n========================================" -ForegroundColor Green
+          Write-Host "All required modules verified" -ForegroundColor Green
+          Write-Host "========================================" -ForegroundColor Green
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: AzurePowerShell@5
+      displayName: 'Verify Azure Connectivity'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "Verifying Azure connectivity..." -ForegroundColor Cyan
+
+          $context = Get-AzContext
+          Write-Host "Connected to Azure" -ForegroundColor Green
+          Write-Host "  Subscription: $($context.Subscription.Name)" -ForegroundColor White
+          Write-Host "  Account: $($context.Account.Id)" -ForegroundColor White
+          Write-Host "  Tenant: $($context.Tenant.Id)" -ForegroundColor White
+        azurePowerShellVersion: 'LatestVersion'
+
+- stage: AnalyzeImages
+  displayName: 'Analyze Images'
+  dependsOn: ValidateEnvironment
+  jobs:
+  - job: ImageAnalysis
+    displayName: 'Analyze Current Images'
+    pool:
+      vmImage: 'windows-latest'
+
+    steps:
+    - checkout: self
+      displayName: 'Checkout Repository'
+
+    - task: AzurePowerShell@5
+      displayName: 'Set Azure Subscription Context'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "Setting Azure subscription context..." -ForegroundColor Cyan
+          Write-Host "Subscription ID: ${{ parameters.subscriptionId }}" -ForegroundColor Yellow
+
+          Set-AzContext -SubscriptionId "${{ parameters.subscriptionId }}"
+
+          $context = Get-AzContext
+          Write-Host "Subscription context set successfully" -ForegroundColor Green
+          Write-Host "  Name: $($context.Subscription.Name)" -ForegroundColor White
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: AzurePowerShell@5
+      displayName: 'Resolve Custom Location'
+      name: ResolveCustomLocation
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "Resolving Custom Location resource ID..." -ForegroundColor Cyan
+          Write-Host "Resource Group: ${{ parameters.resourceGroup }}" -ForegroundColor Yellow
+          Write-Host "Custom Location: ${{ parameters.customLocationName }}" -ForegroundColor Yellow
+
+          try {
+            $customLocation = Get-AzResource `
+              -ResourceGroupName "${{ parameters.resourceGroup }}" `
+              -ResourceType "Microsoft.ExtendedLocation/customLocations" `
+              -Name "${{ parameters.customLocationName }}" `
+              -ErrorAction Stop
+            
+            $customLocationID = $customLocation.ResourceId
+            
+            if ([string]::IsNullOrEmpty($customLocationID)) {
+              throw "Custom Location ID is null or empty"
+            }
+            
+            Write-Host "Custom Location ID resolved: $customLocationID" -ForegroundColor Green
+            Write-Host "##vso[task.setvariable variable=customLocationID;isOutput=true]$customLocationID"
+          }
+          catch {
+            Write-Host "##vso[task.logissue type=error]Failed to resolve Custom Location: $($_.Exception.Message)"
+            exit 1
+          }
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: AzurePowerShell@5
+      displayName: 'Get Latest Gallery Image Version'
+      name: GetImageVersion
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Image Version Discovery" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Gallery: ${{ parameters.galleryName }}" -ForegroundColor Yellow
+          Write-Host "Definition: ${{ parameters.imageDefinition }}" -ForegroundColor Yellow
+          Write-Host "Resource Group: ${{ parameters.imgResourceGroup }}" -ForegroundColor Yellow
+
+          try {
+            $sourceImgVer = Get-AzGalleryImageVersion `
+              -GalleryImageDefinitionName "${{ parameters.imageDefinition }}" `
+              -GalleryName "${{ parameters.galleryName }}" `
+              -ResourceGroupName "${{ parameters.imgResourceGroup }}" `
+              -ErrorAction Stop |
+              Where-Object { $_.PublishingProfile.ExcludeFromLatest -eq $false } |
+              Select-Object -Last 1
+            
+            if ($null -eq $sourceImgVer) {
+              throw "No valid image version found in the gallery"
+            }
+            
+            $imageVersion = $sourceImgVer.Name
+            $imagePattern = $sourceImgVer.Name.Replace(".", "-").split("-")[0..1] -join "-"
+            
+            Write-Host "`nFound latest image version:" -ForegroundColor Green
+            Write-Host "  Version: $imageVersion" -ForegroundColor White
+            Write-Host "  Pattern: $imagePattern*" -ForegroundColor White
+            
+            Write-Host "##vso[task.setvariable variable=imageVersion;isOutput=true]$imageVersion"
+            Write-Host "##vso[task.setvariable variable=imagePattern;isOutput=true]$imagePattern"
+          }
+          catch {
+            Write-Host "##vso[task.logissue type=error]Failed to retrieve image version: $($_.Exception.Message)"
+            exit 1
+          }
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: AzurePowerShell@5
+      displayName: 'List Current HCI Images'
+      name: ListImages
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Current HCI Images Analysis" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+
+          $imagePattern = "$(GetImageVersion.imagePattern)"
+
+          try {
+            $allImages = Get-AzStackHciVMimage -ResourceGroupName "${{ parameters.resourceGroup }}" -ErrorAction Stop
+            $existingHCIImages = $allImages.Name
+            
+            Write-Host "Total images in HCI cluster: $($existingHCIImages.Count)" -ForegroundColor White
+            
+            # Filter images matching the pattern
+            $customImages = $existingHCIImages | Where-Object { $_ -like "$imagePattern*" }
+            
+            if ($customImages) {
+              Write-Host "`nImages matching pattern '$imagePattern*':" -ForegroundColor Cyan
+              $customImages | ForEach-Object { Write-Host "  - $_" -ForegroundColor White }
+              Write-Host "`nTotal matching images: $($customImages.Count)" -ForegroundColor Yellow
+              Write-Host "Images to keep: ${{ parameters.imagesToKeep }}" -ForegroundColor Yellow
+              
+              if ($customImages.Count -gt ${{ parameters.imagesToKeep }}) {
+                $deleteCount = $customImages.Count - ${{ parameters.imagesToKeep }}
+                $imagesToKeep = $customImages | Select-Object -Last ${{ parameters.imagesToKeep }}
+                $imagesToDelete = $customImages | Select-Object -First $deleteCount
+                
+                Write-Host "`n⚠ CLEANUP REQUIRED ⚠" -ForegroundColor Yellow
+                Write-Host "Number of images to delete: $deleteCount" -ForegroundColor Red
+                
+                Write-Host "`nImages that will be KEPT:" -ForegroundColor Green
+                $imagesToKeep | ForEach-Object { Write-Host "  ✓ $_" -ForegroundColor Green }
+                
+                Write-Host "`nImages that will be DELETED:" -ForegroundColor Red
+                $imagesToDelete | ForEach-Object { Write-Host "  ✗ $_" -ForegroundColor Red }
+                
+                $deleteList = $imagesToDelete -join ','
+                Write-Host "##vso[task.setvariable variable=imagesToDelete;isOutput=true]$deleteList"
+                Write-Host "##vso[task.setvariable variable=deleteCount;isOutput=true]$deleteCount"
+                Write-Host "##vso[task.setvariable variable=cleanupRequired;isOutput=true]true"
+              } else {
+                Write-Host "`n✓ No cleanup required" -ForegroundColor Green
+                Write-Host "Image count ($($customImages.Count)) is within retention limit (${{ parameters.imagesToKeep }})" -ForegroundColor Green
+                Write-Host "##vso[task.setvariable variable=cleanupRequired;isOutput=true]false"
+              }
+            } else {
+              Write-Host "`nNo images found matching pattern '$imagePattern*'" -ForegroundColor Yellow
+              Write-Host "##vso[task.setvariable variable=cleanupRequired;isOutput=true]false"
+            }
+          }
+          catch {
+            Write-Host "##vso[task.logissue type=error]Failed to list HCI images: $($_.Exception.Message)"
+            exit 1
+          }
+        azurePowerShellVersion: 'LatestVersion'
+
+- stage: CleanupImages
+  displayName: 'Cleanup Old Images'
+  dependsOn: AnalyzeImages
+  condition: and(succeeded(), eq(dependencies.AnalyzeImages.outputs['ImageAnalysis.ListImages.cleanupRequired'], 'true'))
+  jobs:
+  - job: DeleteImages
+    displayName: 'Delete Old Images'
+    condition: succeeded()
+    pool:
+      vmImage: 'windows-latest'
+
+    variables:
+      imagesToDelete: $[ stageDependencies.AnalyzeImages.ImageAnalysis.outputs['ListImages.imagesToDelete'] ]
+      deleteCount: $[ stageDependencies.AnalyzeImages.ImageAnalysis.outputs['ListImages.deleteCount'] ]
+
+    steps:
+    - task: AzurePowerShell@5
+      displayName: 'Delete Old HCI Images'
+      condition: ne('${{ parameters.dryRun }}', 'true')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Deleting Old HCI Images" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+
+          Set-AzContext -SubscriptionId "${{ parameters.subscriptionId }}"
+
+          $imagesToDelete = "$(imagesToDelete)" -split ','
+
+          Write-Host "Number of images to delete: $($imagesToDelete.Count)" -ForegroundColor Yellow
+          Write-Host "`nStarting deletion process..." -ForegroundColor Cyan
+
+          $deletionResults = @()
+
+          foreach ($img in $imagesToDelete) {
+            Write-Host "`nDeleting image: $img" -ForegroundColor Yellow
+            try {
+              $result = Remove-AzStackHciVMimage `
+                -ResourceGroupName "${{ parameters.resourceGroup }}" `
+                -Name $img `
+                -Force `
+                -NoWait `
+                -ErrorAction Stop
+              
+              Write-Host "  ✓ Deletion initiated for: $img" -ForegroundColor Green
+              $deletionResults += [PSCustomObject]@{
+                ImageName = $img
+                Status = "Initiated"
+                Timestamp = Get-Date
+              }
+            }
+            catch {
+              Write-Host "  ✗ Failed to delete: $img" -ForegroundColor Red
+              Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+              Write-Host "##vso[task.logissue type=warning]Failed to delete image $img : $($_.Exception.Message)"
+              $deletionResults += [PSCustomObject]@{
+                ImageName = $img
+                Status = "Failed"
+                Error = $_.Exception.Message
+                Timestamp = Get-Date
+              }
+            }
+          }
+
+          Write-Host "`n========================================" -ForegroundColor Green
+          Write-Host "Deletion Summary" -ForegroundColor Green
+          Write-Host "========================================" -ForegroundColor Green
+          $deletionResults | Format-Table -AutoSize
+
+          $successCount = ($deletionResults | Where-Object { $_.Status -eq "Initiated" }).Count
+          $failCount = ($deletionResults | Where-Object { $_.Status -eq "Failed" }).Count
+
+          Write-Host "`nSuccessfully initiated: $successCount" -ForegroundColor Green
+          Write-Host "Failed: $failCount" -ForegroundColor $(if($failCount -gt 0){'Red'}else{'Green'})
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: PowerShell@2
+      displayName: 'Dry Run - Preview Only'
+      condition: eq('${{ parameters.dryRun }}', 'true')
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "DRY RUN MODE - No Changes Made" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+
+          $imagesToDelete = "$(imagesToDelete)" -split ','
+
+          Write-Host "`nThe following images WOULD BE deleted:" -ForegroundColor Yellow
+          $imagesToDelete | ForEach-Object {
+            Write-Host "  ✗ $_" -ForegroundColor Yellow
+          }
+
+          Write-Host "`nTotal images that would be deleted: $($imagesToDelete.Count)" -ForegroundColor Yellow
+          Write-Host "`n⚠ DRY RUN MODE: No actual deletion performed" -ForegroundColor Cyan
+          Write-Host "Set 'Dry Run' parameter to 'false' to execute actual deletion" -ForegroundColor Cyan
+
+- stage: Verification
+  displayName: 'Verify Cleanup'
+  dependsOn:
+  - AnalyzeImages
+  - CleanupImages
+  condition: and(succeeded(), eq(dependencies.AnalyzeImages.outputs['ImageAnalysis.ListImages.cleanupRequired'], 'true'))
+  jobs:
+  - job: VerifyCleanup
+    displayName: 'Verify Image Cleanup'
+    pool:
+      vmImage: 'windows-latest'
+
+    variables:
+      imagePattern: $[ stageDependencies.AnalyzeImages.ImageAnalysis.outputs['GetImageVersion.imagePattern'] ]
+
+    steps:
+    - task: AzurePowerShell@5
+      displayName: 'Verify Remaining Images'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Post-Cleanup Verification" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+
+          Set-AzContext -SubscriptionId "${{ parameters.subscriptionId }}"
+
+          $imagePattern = "$(imagePattern)"
+
+          # Wait a few seconds for deletions to register
+          Write-Host "Waiting for deletion operations to register..." -ForegroundColor Yellow
+          Start-Sleep -Seconds 10
+
+          try {
+            $allImages = Get-AzStackHciVMimage -ResourceGroupName "${{ parameters.resourceGroup }}" -ErrorAction Stop
+            $remainingImages = $allImages.Name | Where-Object { $_ -like "$imagePattern*" }
+            
+            Write-Host "`nRemaining images matching pattern '$imagePattern*':" -ForegroundColor Cyan
+            if ($remainingImages) {
+              $remainingImages | ForEach-Object { Write-Host "  - $_" -ForegroundColor White }
+              Write-Host "`nTotal remaining images: $($remainingImages.Count)" -ForegroundColor Green
+              
+              if ($remainingImages.Count -le ${{ parameters.imagesToKeep }}) {
+                Write-Host "`n✓ Cleanup verification successful" -ForegroundColor Green
+                Write-Host "Image count is within retention limit (${{ parameters.imagesToKeep }})" -ForegroundColor Green
+              } else {
+                Write-Host "`n⚠ Warning: Image count ($($remainingImages.Count)) still exceeds limit (${{ parameters.imagesToKeep }})" -ForegroundColor Yellow
+                Write-Host "Some deletion operations may still be in progress." -ForegroundColor Yellow
+              }
+            } else {
+              Write-Host "  No images remaining" -ForegroundColor Yellow
+            }
+          }
+          catch {
+            Write-Host "##vso[task.logissue type=warning]Could not verify cleanup: $($_.Exception.Message)"
+          }
+        azurePowerShellVersion: 'LatestVersion'
+
+    - task: PowerShell@2
+      displayName: 'Pipeline Execution Summary'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host ""
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Pipeline Execution Summary" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Environment: ${{ parameters.environmentName }}" -ForegroundColor White
+          Write-Host "Subscription: ${{ parameters.subscriptionId }}" -ForegroundColor White
+          Write-Host "HCI Resource Group: ${{ parameters.resourceGroup }}" -ForegroundColor White
+          Write-Host "Gallery: ${{ parameters.galleryName }}" -ForegroundColor White
+          Write-Host "Definition: ${{ parameters.imageDefinition }}" -ForegroundColor White
+          Write-Host "Images to Keep: ${{ parameters.imagesToKeep }}" -ForegroundColor White
+          Write-Host "Dry Run Mode: ${{ parameters.dryRun }}" -ForegroundColor White
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "Next Steps:" -ForegroundColor Yellow
+          Write-Host "1. Verify remaining images in Azure portal" -ForegroundColor White
+          Write-Host "2. Monitor HCI storage utilization" -ForegroundColor White
+          Write-Host "3. Review deletion logs for any failures" -ForegroundColor White
+          Write-Host "4. Schedule regular cleanup runs" -ForegroundColor White
+          Write-Host ""
+          Write-Host "Verification Command:" -ForegroundColor Yellow
+          Write-Host "Get-AzStackHciVMimage -ResourceGroupName '${{ parameters.resourceGroup }}'" -ForegroundColor Cyan

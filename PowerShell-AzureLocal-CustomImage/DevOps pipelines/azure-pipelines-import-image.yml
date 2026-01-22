@@ -1,0 +1,509 @@
+#============================================================
+# Azure DevOps Pipeline: Import Custom Image to HCI
+#============================================================
+# This pipeline automates the import of VM images from Azure Compute Gallery
+# to Azure Stack HCI cluster using Azure CLI commands.
+#
+# Prerequisites:
+# - Service Connection configured in Azure DevOps
+# - Az.Compute PowerShell module available
+# - Permissions on HCI cluster and Azure Compute Gallery
+#============================================================
+
+name: Import-HCI-Image-$(Date:yyyyMMdd)-$(Rev:r)
+
+trigger: none  # Manual trigger only - can be changed to trigger on gallery updates
+
+schedules:
+# Optional: Schedule to check for new images daily at 2 AM UTC
+# - cron: "0 2 * * *"
+#   displayName: Daily image import check
+#   branches:
+#     include:
+#     - main
+#   always: false  # Only run if there are changes
+
+parameters:
+- name: environmentName
+  displayName: 'Target Environment'
+  type: string
+  default: 'Production'
+  values:
+  - 'Development'
+  - 'Test'
+  - 'Production'
+
+- name: storagePathName
+  displayName: 'HCI Storage Path Name'
+  type: string
+  default: 'Images'
+
+- name: csvPath
+  displayName: 'CSV Path on HCI Cluster'
+  type: string
+  default: 'C:\ClusterStorage\UserStorage_1\Images'
+
+- name: osType
+  displayName: 'Operating System Type'
+  type: string
+  default: 'Windows'
+  values:
+  - 'Windows'
+  - 'Linux'
+
+- name: skipCleanup
+  displayName: 'Skip Cleanup (Keep Temporary Disk)'
+  type: boolean
+  default: false
+
+variables:
+- name: azureServiceConnection
+  value: 'Azure-ServiceConnection'  # Update with your service connection name
+- name: azureSubscription
+  value: '2a234050-17d0-44a2-9755-08e59607bcd9'  # Update with your subscription ID
+- name: resourceGroup
+  value: 'rg-hci-cluster'  # Update with your HCI resource group
+- name: customLocationName
+  value: 'hci-custom-location'  # Update with your custom location name
+- name: location
+  value: 'WestEurope'
+- name: galleryName
+  value: 'acg-golden-images'  # Update with your gallery name
+- name: imageDefinition
+  value: 'win11-23h2-avd'  # Update with your image definition
+- name: imgResourceGroup
+  value: 'rg-compute-gallery'  # Update with your gallery resource group
+
+stages:
+- stage: ValidateEnvironment
+  displayName: 'Validate Environment'
+  jobs:
+  - job: PreflightChecks
+    displayName: 'Preflight Checks'
+    pool:
+      vmImage: 'windows-latest'
+    
+    steps:
+    - task: PowerShell@2
+      displayName: 'Check PowerShell Version'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)"
+          Write-Host "OS: $($PSVersionTable.OS)"
+          
+    - task: AzureCLI@2
+      displayName: 'Verify Azure CLI Version'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Azure CLI Version:"
+          az version
+          
+    - task: AzurePowerShell@5
+      displayName: 'Verify PowerShell Modules'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "Checking Az.Compute module..."
+          $module = Get-Module -ListAvailable -Name Az.Compute
+          if ($module) {
+            Write-Host "Az.Compute version: $($module.Version)" -ForegroundColor Green
+          } else {
+            Write-Host "Installing Az.Compute module..." -ForegroundColor Yellow
+            Install-Module -Name Az.Compute -Force -AllowClobber -Scope CurrentUser
+          }
+        azurePowerShellVersion: 'LatestVersion'
+
+- stage: ImportImage
+  displayName: 'Import Image to HCI'
+  dependsOn: ValidateEnvironment
+  jobs:
+  - job: ImportJob
+    displayName: 'Import Image Job'
+    pool:
+      vmImage: 'windows-latest'
+    timeoutInMinutes: 120  # 2 hours for large images
+    
+    steps:
+    - checkout: self
+      displayName: 'Checkout Repository'
+    
+    - task: AzureCLI@2
+      displayName: 'Configure Azure CLI Extensions'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Configuring Azure CLI to auto-install extensions..." -ForegroundColor Cyan
+          az config set extension.use_dynamic_install=yes_without_prompt
+          Write-Host "Configuration complete" -ForegroundColor Green
+    
+    - task: AzureCLI@2
+      displayName: 'Resolve Custom Location ID'
+      name: ResolveCustomLocation
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Resolving Custom Location resource ID..." -ForegroundColor Cyan
+          Write-Host "Resource Group: $(resourceGroup)" -ForegroundColor Yellow
+          Write-Host "Custom Location Name: $(customLocationName)" -ForegroundColor Yellow
+          
+          $customLocationID = az customlocation show `
+            --resource-group "$(resourceGroup)" `
+            --name "$(customLocationName)" `
+            --query id -o tsv
+          
+          if ([string]::IsNullOrEmpty($customLocationID)) {
+            Write-Host "##vso[task.logissue type=error]Failed to resolve Custom Location ID"
+            exit 1
+          }
+          
+          Write-Host "Custom Location ID: $customLocationID" -ForegroundColor Green
+          Write-Host "##vso[task.setvariable variable=customLocationID;isOutput=true]$customLocationID"
+    
+    - task: AzureCLI@2
+      displayName: 'Create/Verify Storage Path'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Creating/Verifying HCI storage path..." -ForegroundColor Cyan
+          Write-Host "Storage Path Name: ${{ parameters.storagePathName }}" -ForegroundColor Yellow
+          Write-Host "CSV Path: ${{ parameters.csvPath }}" -ForegroundColor Yellow
+          
+          $output = az stack-hci-vm storagepath create `
+            --resource-group "$(resourceGroup)" `
+            --custom-location "$(ResolveCustomLocation.customLocationID)" `
+            --name "${{ parameters.storagePathName }}" `
+            --path "${{ parameters.csvPath }}" 2>&1
+          
+          if ($LASTEXITCODE -ne 0 -and $output -notlike "*already exists*") {
+            Write-Host "##vso[task.logissue type=error]Failed to create storage path"
+            Write-Host $output
+            exit 1
+          }
+          
+          Write-Host "Storage path configured successfully" -ForegroundColor Green
+    
+    - task: AzurePowerShell@5
+      displayName: 'Get Latest Gallery Image Version'
+      name: GetImageVersion
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'inlineScript'
+        inline: |
+          Write-Host "Retrieving latest image version from Azure Compute Gallery..." -ForegroundColor Cyan
+          Write-Host "Gallery: $(galleryName)" -ForegroundColor Yellow
+          Write-Host "Definition: $(imageDefinition)" -ForegroundColor Yellow
+          Write-Host "Resource Group: $(imgResourceGroup)" -ForegroundColor Yellow
+          
+          try {
+            $sourceImgVer = Get-AzGalleryImageVersion `
+              -GalleryImageDefinitionName "$(imageDefinition)" `
+              -GalleryName "$(galleryName)" `
+              -ResourceGroupName "$(imgResourceGroup)" |
+              Where-Object { $_.PublishingProfile.ExcludeFromLatest -eq $false } |
+              Select-Object -Last 1
+            
+            if ($null -eq $sourceImgVer) {
+              Write-Host "##vso[task.logissue type=error]No valid image version found"
+              exit 1
+            }
+            
+            $imageName = $sourceImgVer.Name.Replace(".", "-")
+            $imageId = $sourceImgVer.Id
+            
+            Write-Host "Found image version: $($sourceImgVer.Name)" -ForegroundColor Green
+            Write-Host "Image ID: $imageId" -ForegroundColor Green
+            
+            Write-Host "##vso[task.setvariable variable=imageName;isOutput=true]$imageName"
+            Write-Host "##vso[task.setvariable variable=imageVersion;isOutput=true]$($sourceImgVer.Name)"
+            Write-Host "##vso[task.setvariable variable=imageId;isOutput=true]$imageId"
+          }
+          catch {
+            Write-Host "##vso[task.logissue type=error]Failed to retrieve image version: $($_.Exception.Message)"
+            exit 1
+          }
+        azurePowerShellVersion: 'LatestVersion'
+    
+    - task: AzureCLI@2
+      displayName: 'Check if Image Already Exists in HCI'
+      name: CheckExistingImage
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Checking if image already exists in HCI..." -ForegroundColor Cyan
+          
+          $existingImages = az stack-hci-vm image list `
+            --resource-group "$(resourceGroup)" `
+            --query "[].name" -o tsv
+          
+          $imageName = "$(GetImageVersion.imageName)"
+          
+          if ($existingImages -contains $imageName) {
+            Write-Host "Image '$imageName' already exists in HCI cluster" -ForegroundColor Yellow
+            Write-Host "##vso[task.setvariable variable=imageExists;isOutput=true]true"
+            Write-Host "##vso[task.complete result=SucceededWithIssues;]Image already imported"
+          } else {
+            Write-Host "Image does not exist. Proceeding with import..." -ForegroundColor Green
+            Write-Host "##vso[task.setvariable variable=imageExists;isOutput=true]false"
+          }
+    
+    - task: AzureCLI@2
+      displayName: 'Create Temporary Managed Disk'
+      condition: eq(variables['CheckExistingImage.imageExists'], 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Creating temporary managed disk..." -ForegroundColor Cyan
+          Write-Host "Disk name: $(GetImageVersion.imageName)" -ForegroundColor Yellow
+          Write-Host "Image version: $(GetImageVersion.imageVersion)" -ForegroundColor Yellow
+          Write-Host "This may take several minutes..." -ForegroundColor Yellow
+          
+          $startTime = Get-Date
+          
+          az disk create `
+            --resource-group "$(imgResourceGroup)" `
+            --location "$(location)" `
+            --name "$(GetImageVersion.imageName)" `
+            --gallery-image-reference "$(GetImageVersion.imageId)"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##vso[task.logissue type=error]Failed to create temporary disk"
+            exit 1
+          }
+          
+          $duration = (Get-Date) - $startTime
+          Write-Host "Disk created successfully in $($duration.TotalMinutes.ToString('0.00')) minutes" -ForegroundColor Green
+    
+    - task: AzureCLI@2
+      displayName: 'Generate SAS URL for Disk'
+      name: GenerateSAS
+      condition: eq(variables['CheckExistingImage.imageExists'], 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Generating SAS URL for disk access..." -ForegroundColor Cyan
+          Write-Host "SAS duration: 8 hours (28800 seconds)" -ForegroundColor Yellow
+          
+          $sasOutput = az disk grant-access `
+            --access-level read `
+            --resource-group "$(imgResourceGroup)" `
+            --name "$(GetImageVersion.imageName)" `
+            --duration-in-seconds 28800
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##vso[task.logissue type=error]Failed to generate SAS URL"
+            exit 1
+          }
+          
+          $sasJson = $sasOutput | ConvertFrom-Json
+          $imageSourcePath = $sasJson.accessSAS
+          
+          if ([string]::IsNullOrEmpty($imageSourcePath)) {
+            Write-Host "##vso[task.logissue type=error]SAS URL is empty"
+            exit 1
+          }
+          
+          Write-Host "SAS URL generated successfully" -ForegroundColor Green
+          Write-Host "##vso[task.setvariable variable=imageSourcePath;isOutput=true;issecret=true]$imageSourcePath"
+    
+    - task: AzureCLI@2
+      displayName: 'Get Storage Path ID'
+      name: GetStoragePath
+      condition: eq(variables['CheckExistingImage.imageExists'], 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Resolving storage path resource ID..." -ForegroundColor Cyan
+          
+          $storagePathID = az stack-hci-vm storagepath show `
+            --resource-group "$(resourceGroup)" `
+            --name "${{ parameters.storagePathName }}" `
+            --query id -o tsv
+          
+          if ([string]::IsNullOrEmpty($storagePathID)) {
+            Write-Host "##vso[task.logissue type=error]Failed to resolve storage path ID"
+            exit 1
+          }
+          
+          Write-Host "Storage Path ID: $storagePathID" -ForegroundColor Green
+          Write-Host "##vso[task.setvariable variable=storagePathID;isOutput=true]$storagePathID"
+    
+    - task: AzureCLI@2
+      displayName: 'Import Image to HCI Cluster'
+      condition: eq(variables['CheckExistingImage.imageExists'], 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Importing Image to HCI Cluster" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Image name: $(GetImageVersion.imageName)" -ForegroundColor Yellow
+          Write-Host "OS type: ${{ parameters.osType }}" -ForegroundColor Yellow
+          Write-Host "Environment: ${{ parameters.environmentName }}" -ForegroundColor Yellow
+          Write-Host "This process may take 15-30 minutes..." -ForegroundColor Yellow
+          
+          $startTime = Get-Date
+          
+          az stack-hci-vm image create `
+            --resource-group "$(resourceGroup)" `
+            --custom-location "$(ResolveCustomLocation.customLocationID)" `
+            --location "$(location)" `
+            --name "$(GetImageVersion.imageName)" `
+            --os-type "${{ parameters.osType }}" `
+            --image-path "$(GenerateSAS.imageSourcePath)" `
+            --storage-path-id "$(GetStoragePath.storagePathID)"
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##vso[task.logissue type=error]Failed to create HCI image"
+            exit 1
+          }
+          
+          $duration = (Get-Date) - $startTime
+          Write-Host "========================================" -ForegroundColor Green
+          Write-Host "Image Import Completed Successfully!" -ForegroundColor Green
+          Write-Host "========================================" -ForegroundColor Green
+          Write-Host "Duration: $($duration.TotalMinutes.ToString('0.00')) minutes" -ForegroundColor Green
+          Write-Host "Image is now available for VM deployments" -ForegroundColor Green
+
+- stage: Cleanup
+  displayName: 'Cleanup Resources'
+  dependsOn: ImportImage
+  condition: and(succeeded(), ne('${{ parameters.skipCleanup }}', 'true'))
+  jobs:
+  - job: CleanupJob
+    displayName: 'Cleanup Temporary Resources'
+    pool:
+      vmImage: 'windows-latest'
+    
+    variables:
+      imageName: $[ stageDependencies.ImportImage.ImportJob.outputs['GetImageVersion.imageName'] ]
+      imageExists: $[ stageDependencies.ImportImage.ImportJob.outputs['CheckExistingImage.imageExists'] ]
+    
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Revoke SAS Access'
+      condition: eq(variables.imageExists, 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Revoking SAS access to temporary disk..." -ForegroundColor Cyan
+          
+          az disk revoke-access `
+            --name "$(imageName)" `
+            --resource-group "$(imgResourceGroup)"
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "SAS access revoked successfully" -ForegroundColor Green
+          } else {
+            Write-Host "##vso[task.logissue type=warning]Failed to revoke SAS access"
+          }
+    
+    - task: AzureCLI@2
+      displayName: 'Delete Temporary Disk'
+      condition: eq(variables.imageExists, 'false')
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Deleting temporary managed disk..." -ForegroundColor Cyan
+          Write-Host "Disk name: $(imageName)" -ForegroundColor Yellow
+          
+          az disk delete `
+            --name "$(imageName)" `
+            --resource-group "$(imgResourceGroup)" `
+            --yes
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Temporary disk deleted successfully" -ForegroundColor Green
+          } else {
+            Write-Host "##vso[task.logissue type=warning]Failed to delete temporary disk"
+            Write-Host "You may need to manually delete disk: $(imageName)" -ForegroundColor Yellow
+          }
+
+- stage: Verification
+  displayName: 'Verify Image Import'
+  dependsOn: 
+  - ImportImage
+  - Cleanup
+  condition: succeeded()
+  jobs:
+  - job: VerifyJob
+    displayName: 'Verify Image in HCI'
+    pool:
+      vmImage: 'windows-latest'
+    
+    variables:
+      imageName: $[ stageDependencies.ImportImage.ImportJob.outputs['GetImageVersion.imageName'] ]
+      imageVersion: $[ stageDependencies.ImportImage.ImportJob.outputs['GetImageVersion.imageVersion'] ]
+    
+    steps:
+    - task: AzureCLI@2
+      displayName: 'List HCI Images'
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Verifying image in HCI cluster..." -ForegroundColor Cyan
+          Write-Host "Resource Group: $(resourceGroup)" -ForegroundColor Yellow
+          
+          $images = az stack-hci-vm image list `
+            --resource-group "$(resourceGroup)" `
+            --query "[?name=='$(imageName)']" | ConvertFrom-Json
+          
+          if ($images.Count -gt 0) {
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host "Image Verification Successful" -ForegroundColor Green
+            Write-Host "========================================" -ForegroundColor Green
+            Write-Host "Image Name: $(imageName)" -ForegroundColor Green
+            Write-Host "Image Version: $(imageVersion)" -ForegroundColor Green
+            Write-Host "Status: Available for VM deployments" -ForegroundColor Green
+          } else {
+            Write-Host "##vso[task.logissue type=warning]Image not found in HCI cluster"
+            Write-Host "The image may still be provisioning. Check Azure portal for status." -ForegroundColor Yellow
+          }
+    
+    - task: PowerShell@2
+      displayName: 'Pipeline Summary'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host ""
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Pipeline Execution Summary" -ForegroundColor Cyan
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host "Environment: ${{ parameters.environmentName }}" -ForegroundColor White
+          Write-Host "Image Name: $(imageName)" -ForegroundColor White
+          Write-Host "Image Version: $(imageVersion)" -ForegroundColor White
+          Write-Host "OS Type: ${{ parameters.osType }}" -ForegroundColor White
+          Write-Host "Storage Path: ${{ parameters.csvPath }}" -ForegroundColor White
+          Write-Host "Resource Group: $(resourceGroup)" -ForegroundColor White
+          Write-Host "========================================" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "Next Steps:" -ForegroundColor Yellow
+          Write-Host "1. Verify image status in Azure portal" -ForegroundColor White
+          Write-Host "2. Create VMs using the imported image" -ForegroundColor White
+          Write-Host "3. Run cleanup pipeline if needed to manage old images" -ForegroundColor White

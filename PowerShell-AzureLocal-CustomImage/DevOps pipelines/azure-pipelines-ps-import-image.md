@@ -102,7 +102,7 @@ Validates the execution environment and ensures all prerequisites are met.
 ## Stage 2: ImportImage
 
 ### Purpose
-Executes the main image import workflow from Azure Compute Gallery to Azure Stack HCI.
+Executes the main image import workflow from Azure Compute Gallery to Azure Local.
 
 ### Jobs
 
