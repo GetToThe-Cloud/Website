@@ -1,5 +1,5 @@
 # GetToThe.Cloud repository
-![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white) <br>![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white) ![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white)
+![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![PowerShell](https://img.shields.io/badge/PowerShell-%235391FE.svg?style=for-the-badge&logo=powershell&logoColor=white) ![BICEP]<br>![Azure](https://img.shields.io/badge/azure-%230072C6.svg?style=for-the-badge&logo=microsoftazure&logoColor=white) ![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white)
 
 
 The code repository from GetToThe.Cloud website. All the generic scripts that are described are located here.
@@ -15,8 +15,12 @@ For more information browse to https://www.gettothe.cloud
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-DeployVirtualMachines">Deploy Virtual Machines to Azure</a></li>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-LogicalNetworks">Add Logical Networks to Azure Local</a></li>
         <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/AzureBicep-AzureLocal-MarketplaceImages">Add Marketplace Images to Azure Local Cluster</a></li>
-        <!-- <li><a href="#Update-RequiredModules">Update-RequiredModules</a></li>
-        <li><a href="#Update-RapidCircleModule">Update-RapidCircleModule</a/</li> -->
+      </ul>
+    </li>
+    <li>
+      PowerShell
+      <ul>
+      <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/PowerShell-AzureLocal-CustomImage">Use PowerShell for custom images Azure Local</a></li>
       </ul>
     </li>
     <li>
