@@ -25,7 +25,7 @@ For more information browse to https://www.gettothe.cloud
     </li>
     <li>DevOps
     <ul> 
-    <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/PowerShell-AzureLocal-CustomImage/DevOps%20pipelines">Custom Image to Azure Local DevOps pipeline</a></li></li>
+    <li><a href="https://github.com/GetToThe-Cloud/Website/tree/main/PowerShell-AzureLocal-CustomImage/DevOps%20pipelines">Custom Image to Azure Local DevOps pipeline</a></li></ul></li>
     <li>
       Terraform
       <ul>
