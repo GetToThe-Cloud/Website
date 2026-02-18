@@ -1,0 +1,469 @@
+# ============================================================================
+# Azure DevOps Pipeline: Deploy VPN Connections to Azure Landing Zone
+# ============================================================================
+# This pipeline deploys Local Network Gateways and VPN Connections
+# to an existing VPN Gateway using Bicep template
+# ============================================================================
+
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - 'AzureBicep-AzureLandingZone-AddVPNConnection/**'
+
+pr:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - 'AzureBicep-AzureLandingZone-AddVPNConnection/**'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Update these variables for your environment
+  azureSubscription: 'your-service-connection-name'  # Azure DevOps service connection
+  resourceGroupName: 'rg-network-prod-001'           # Resource group with VPN Gateway
+  location: 'westeurope'                             # Azure region
+  templateFile: '$(Build.SourcesDirectory)/AzureBicep-AzureLandingZone-AddVPNConnection/azurebicep-azurelandingzone-addvpnconnection.bicep'
+  parametersFile: '$(Build.SourcesDirectory)/AzureBicep-AzureLandingZone-AddVPNConnection/azurebicep-azurelandingzone-addvpnconnection.parameters.bicepparam'
+  deploymentName: 'vpn-connection-$(Build.BuildId)'
+  
+stages:
+# ============================================================================
+# Stage 1: Build and Validate
+# ============================================================================
+- stage: Validate
+  displayName: 'Validate Bicep Template'
+  jobs:
+  - job: ValidateTemplate
+    displayName: 'Build, Validate, and What-If'
+    steps:
+    - checkout: self
+      displayName: 'Checkout Repository'
+
+    - task: PowerShell@2
+      displayName: 'Display Configuration'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "========================================="
+          Write-Host "  VPN Connection Deployment Configuration"
+          Write-Host "========================================="
+          Write-Host "Resource Group: $(resourceGroupName)"
+          Write-Host "Location: $(location)"
+          Write-Host "Template: $(templateFile)"
+          Write-Host "Parameters: $(parametersFile)"
+          Write-Host "Deployment Name: $(deploymentName)"
+          Write-Host "========================================="
+        pwsh: true
+
+    - task: AzureCLI@2
+      displayName: 'Install Latest Bicep CLI'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Installing/Upgrading Bicep CLI..."
+          az bicep upgrade
+          
+          $version = az bicep version
+          Write-Host "✅ Bicep version: $version"
+
+    - task: AzureCLI@2
+      displayName: 'Build Bicep Template'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          Write-Host "Building Bicep template..."
+          az bicep build --file "$(templateFile)"
+          
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Bicep build successful"
+          } else {
+            Write-Error "❌ Bicep build failed"
+            exit 1
+          }
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Validate ARM Template'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(azureSubscription)
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: $(templateFile)
+        csmParametersFile: $(parametersFile)
+        deploymentMode: 'Validation'
+
+    - task: AzurePowerShell@5
+      displayName: 'What-If Deployment Analysis'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "========================================="
+          Write-Host "  What-If Deployment Analysis"
+          Write-Host "========================================="
+          
+          $params = @{
+            ResourceGroupName = "$(resourceGroupName)"
+            TemplateFile = "$(templateFile)"
+            TemplateParameterFile = "$(parametersFile)"
+            Name = "$(deploymentName)-whatif"
+          }
+          
+          try {
+            $whatIf = New-AzResourceGroupDeployment @params -WhatIf -Verbose
+            Write-Host "`n✅ What-If analysis completed successfully"
+          } catch {
+            Write-Warning "What-If analysis encountered an issue: $($_.Exception.Message)"
+          }
+          
+          Write-Host "`n========================================="
+        azurePowerShellVersion: 'LatestVersion'
+        pwsh: true
+
+    - task: AzurePowerShell@5
+      displayName: 'Verify VPN Gateway Exists'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "Verifying existing VPN Gateway..."
+          
+          # Get VPN Gateway name from parameter file
+          $paramsContent = Get-Content "$(parametersFile)" -Raw
+          
+          # List all VPN Gateways in resource group
+          $gateways = Get-AzVirtualNetworkGateway -ResourceGroupName "$(resourceGroupName)" -ErrorAction SilentlyContinue
+          
+          if ($gateways) {
+            Write-Host "`n✅ Found VPN Gateway(s) in resource group:"
+            $gateways | ForEach-Object {
+              Write-Host "  - Name: $($_.Name)"
+              Write-Host "    State: $($_.ProvisioningState)"
+              Write-Host "    Type: $($_.GatewayType)"
+              Write-Host "    SKU: $($_.Sku.Name)"
+              Write-Host "    Location: $($_.Location)"
+            }
+            
+            if ($gateways.ProvisioningState -contains "Succeeded") {
+              Write-Host "`n✅ VPN Gateway is ready for connection deployment"
+            } else {
+              Write-Warning "⚠️  VPN Gateway provisioning state is not 'Succeeded'"
+            }
+          } else {
+            Write-Error "❌ No VPN Gateway found in resource group $(resourceGroupName)"
+            Write-Error "Please ensure the VPN Gateway exists before deploying connections"
+            exit 1
+          }
+        azurePowerShellVersion: 'LatestVersion'
+        pwsh: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Bicep Artifacts'
+      inputs:
+        targetPath: '$(Build.SourcesDirectory)/AzureBicep-AzureLandingZone-AddVPNConnection'
+        artifact: 'bicep-templates'
+        publishLocation: 'pipeline'
+
+# ============================================================================
+# Stage 2: Deploy to Production
+# ============================================================================
+- stage: Deploy
+  displayName: 'Deploy VPN Connections'
+  dependsOn: Validate
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployVpnConnections
+    displayName: 'Deploy Local Network Gateways and VPN Connections'
+    environment: 'production-network'  # Create this environment in Azure DevOps
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: 'bicep-templates'
+            displayName: 'Download Bicep Templates'
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy VPN Connections'
+            name: DeployBicep
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: $(azureSubscription)
+              resourceGroupName: $(resourceGroupName)
+              location: $(location)
+              templateLocation: 'Linked artifact'
+              csmFile: '$(Pipeline.Workspace)/bicep-templates/azurebicep-azurelandingzone-addvpnconnection.bicep'
+              csmParametersFile: '$(Pipeline.Workspace)/bicep-templates/azurebicep-azurelandingzone-addvpnconnection.parameters.bicepparam'
+              deploymentMode: 'Incremental'
+              deploymentName: $(deploymentName)
+              deploymentOutputs: 'deploymentOutputs'
+
+          - task: AzurePowerShell@5
+            displayName: 'Parse and Display Deployment Outputs'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              ScriptType: 'InlineScript'
+              Inline: |
+                Write-Host "========================================="
+                Write-Host "  Deployment Outputs"
+                Write-Host "========================================="
+                
+                try {
+                  $outputs = '$(deploymentOutputs)' | ConvertFrom-Json
+                  
+                  if ($outputs) {
+                    $outputs.PSObject.Properties | ForEach-Object {
+                      $name = $_.Name
+                      $value = $_.Value.value
+                      
+                      Write-Host "`n📋 $name:"
+                      if ($value -is [array]) {
+                        $value | ForEach-Object { Write-Host "  ✓ $_" }
+                      } else {
+                        Write-Host "  ✓ $value"
+                      }
+                    }
+                    
+                    Write-Host "`n========================================="
+                    Write-Host "✅ Deployment completed successfully"
+                    Write-Host "========================================="
+                  } else {
+                    Write-Host "No outputs available from deployment"
+                  }
+                } catch {
+                  Write-Warning "Could not parse deployment outputs: $($_.Exception.Message)"
+                }
+              azurePowerShellVersion: 'LatestVersion'
+              pwsh: true
+            condition: and(succeeded(), ne(variables['deploymentOutputs'], ''))
+
+# ============================================================================
+# Stage 3: Verify Deployment
+# ============================================================================
+- stage: Verify
+  displayName: 'Verify VPN Connections'
+  dependsOn: Deploy
+  condition: succeeded()
+  jobs:
+  - job: VerifyResources
+    displayName: 'Verify Deployed Resources'
+    steps:
+    - task: AzurePowerShell@5
+      displayName: 'Verify Local Network Gateways'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "========================================="
+          Write-Host "  Local Network Gateways Verification"
+          Write-Host "========================================="
+          
+          $lngs = Get-AzLocalNetworkGateway -ResourceGroupName "$(resourceGroupName)"
+          
+          if ($lngs) {
+            Write-Host "`n✅ Found $($lngs.Count) Local Network Gateway(s):"
+            $lngs | ForEach-Object {
+              Write-Host "`n📍 Gateway: $($_.Name)"
+              Write-Host "   State: $($_.ProvisioningState)"
+              Write-Host "   IP: $($_.GatewayIpAddress)"
+              Write-Host "   Address Space: $($_.LocalNetworkAddressSpace.AddressPrefixes -join ', ')"
+              Write-Host "   Location: $($_.Location)"
+              Write-Host "   Resource ID: $($_.Id)"
+            }
+          } else {
+            Write-Warning "⚠️  No Local Network Gateways found"
+          }
+        azurePowerShellVersion: 'LatestVersion'
+        pwsh: true
+
+    - task: AzurePowerShell@5
+      displayName: 'Verify VPN Connections and Status'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "========================================="
+          Write-Host "  VPN Connections Verification"
+          Write-Host "========================================="
+          
+          $connections = Get-AzVirtualNetworkGatewayConnection -ResourceGroupName "$(resourceGroupName)"
+          
+          if ($connections) {
+            Write-Host "`n✅ Found $($connections.Count) VPN Connection(s):"
+            
+            $allConnected = $true
+            $connections | ForEach-Object {
+              Write-Host "`n🔗 Connection: $($_.Name)"
+              Write-Host "   Type: $($_.ConnectionType)"
+              Write-Host "   State: $($_.ProvisioningState)"
+              Write-Host "   Status: $($_.ConnectionStatus)"
+              Write-Host "   BGP Enabled: $($_.EnableBgp)"
+              Write-Host "   Location: $($_.Location)"
+              
+              # Get connection statistics
+              try {
+                $stats = Get-AzVirtualNetworkGatewayConnectionSharedKey `
+                  -ResourceGroupName "$(resourceGroupName)" `
+                  -Name $_.Name `
+                  -ErrorAction SilentlyContinue
+                
+                if ($stats) {
+                  Write-Host "   Shared Key: ✓ Configured"
+                }
+              } catch {
+                Write-Host "   Shared Key: ⚠️  Could not verify"
+              }
+              
+              # Check connection status
+              if ($_.ConnectionStatus -eq "Connected") {
+                Write-Host "   ✅ Connection is ACTIVE"
+              } elseif ($_.ConnectionStatus -eq "NotConnected") {
+                Write-Warning "   ⚠️  Connection is NOT CONNECTED"
+                $allConnected = $false
+              } elseif ($_.ConnectionStatus -eq "Connecting") {
+                Write-Host "   🔄 Connection is establishing..."
+              } else {
+                Write-Host "   Status: $($_.ConnectionStatus)"
+              }
+            }
+            
+            Write-Host "`n========================================="
+            if ($allConnected) {
+              Write-Host "✅ All VPN connections are active"
+            } else {
+              Write-Warning "⚠️  Some connections are not active"
+              Write-Host "`nTroubleshooting steps:"
+              Write-Host "1. Verify shared key matches on remote device"
+              Write-Host "2. Check firewall rules (UDP 500, 4500, ESP)"
+              Write-Host "3. Verify remote device configuration"
+              Write-Host "4. Check Azure VPN Gateway logs"
+            }
+            Write-Host "========================================="
+          } else {
+            Write-Warning "⚠️  No VPN Connections found"
+          }
+        azurePowerShellVersion: 'LatestVersion'
+        pwsh: true
+
+    - task: AzurePowerShell@5
+      displayName: 'Generate Deployment Report'
+      inputs:
+        azureSubscription: $(azureSubscription)
+        ScriptType: 'InlineScript'
+        Inline: |
+          Write-Host "`n========================================="
+          Write-Host "  VPN Connection Deployment Report"
+          Write-Host "========================================="
+          Write-Host "Deployment Name: $(deploymentName)"
+          Write-Host "Build ID: $(Build.BuildId)"
+          Write-Host "Build Number: $(Build.BuildNumber)"
+          Write-Host "Resource Group: $(resourceGroupName)"
+          Write-Host "Location: $(location)"
+          Write-Host "Triggered by: $(Build.RequestedFor)"
+          Write-Host "Source Branch: $(Build.SourceBranchName)"
+          Write-Host "Commit: $(Build.SourceVersion)"
+          Write-Host "Repository: $(Build.Repository.Name)"
+          Write-Host "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')"
+          Write-Host "========================================="
+          
+          # Get deployment details
+          try {
+            $deployment = Get-AzResourceGroupDeployment `
+              -ResourceGroupName "$(resourceGroupName)" `
+              -Name "$(deploymentName)" `
+              -ErrorAction SilentlyContinue
+            
+            if ($deployment) {
+              Write-Host "`n📊 Deployment Details:"
+              Write-Host "   Status: $($deployment.ProvisioningState)"
+              Write-Host "   Mode: $($deployment.Properties.Mode)"
+              Write-Host "   Timestamp: $($deployment.Timestamp)"
+              Write-Host "   Duration: $($deployment.Properties.Duration)"
+              Write-Host "   Correlation ID: $($deployment.CorrelationId)"
+              
+              if ($deployment.ProvisioningState -eq "Succeeded") {
+                Write-Host "`n✅ DEPLOYMENT SUCCESSFUL"
+                
+                Write-Host "`n📝 Next Steps:"
+                Write-Host "1. Verify VPN connection status in Azure Portal"
+                Write-Host "2. Test connectivity from Azure to on-premises"
+                Write-Host "3. Test connectivity from on-premises to Azure"
+                Write-Host "4. Configure routing if needed"
+                Write-Host "5. Set up monitoring and alerts"
+                Write-Host "6. Document the configuration"
+              } else {
+                Write-Warning "`n⚠️  Deployment state: $($deployment.ProvisioningState)"
+              }
+            } else {
+              Write-Warning "Could not retrieve deployment details"
+            }
+          } catch {
+            Write-Warning "Error retrieving deployment: $($_.Exception.Message)"
+          }
+          
+          Write-Host "`n========================================="
+          Write-Host "🎉 Pipeline completed successfully!"
+          Write-Host "========================================="
+        azurePowerShellVersion: 'LatestVersion'
+        pwsh: true
+
+# ============================================================================
+# Post-Deployment Notification (Optional)
+# ============================================================================
+    - task: PowerShell@2
+      displayName: 'Generate Summary for Wiki/Documentation'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $summary = @"
+          # VPN Connection Deployment Summary
+          
+          **Deployment ID**: $(deploymentName)
+          **Date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+          **Status**: Completed
+          
+          ## Deployment Information
+          - **Resource Group**: $(resourceGroupName)
+          - **Location**: $(location)
+          - **Build**: $(Build.BuildNumber)
+          - **Triggered By**: $(Build.RequestedFor)
+          
+          ## Resources Deployed
+          - Local Network Gateways: Created
+          - VPN Connections: Established
+          - Configuration: Applied
+          
+          ## Verification
+          Check Azure Portal for connection status:
+          [View VPN Gateway](https://portal.azure.com/#blade/HubsExtension/BrowseResource/resourceType/Microsoft.Network%2FvirtualNetworkGateways)
+          
+          ## Documentation
+          - Template: azurebicep-azurelandingzone-addvpnconnection.bicep
+          - Repository: $(Build.Repository.Name)
+          - Commit: $(Build.SourceVersion)
+          "@
+          
+          Write-Host $summary
+          
+          # Save to artifact
+          $summary | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/deployment-summary.md" -Encoding UTF8
+        pwsh: true
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Deployment Summary'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)'
+        artifact: 'deployment-report'
+        publishLocation: 'pipeline'

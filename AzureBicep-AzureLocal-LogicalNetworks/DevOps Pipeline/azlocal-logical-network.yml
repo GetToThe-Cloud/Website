@@ -1,0 +1,486 @@
+#======================================================================================================
+# Azure Stack HCI Logical Networks - Deployment Pipeline
+#======================================================================================================
+# This pipeline automates the deployment of logical networks to Azure Stack HCI (Azure Local) clusters
+# using Bicep templates and Azure Verified Modules.
+#
+# Pipeline Stages:
+#   1. Validate  - Bicep validation, syntax checking, and What-If analysis
+#   2. Deploy    - Deploy logical networks to Azure Stack HCI with approval gate
+#   3. Verify    - Verify deployed resources and connection status
+#
+# Author: Alex ter Neuzen
+# Website: https://www.gettothe.cloud
+# Last Updated: February 2026
+#======================================================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - AzureBicep-AzureLocal-LogicalNetworks/**
+
+variables:
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/AzureBicep-AzureLocal-LogicalNetworks'
+  - name: bicepTemplate
+    value: 'azlocal-logical-network.bicep'
+  - name: bicepParameters
+    value: 'azlocal-logical-network.parameters.bicepparam'
+  - name: serviceConnection
+    value: 'Azure-ServiceConnection' # Update with your Azure service connection name
+  - name: deploymentName
+    value: 'azlocal-logical-networks-$(Build.BuildId)'
+  - name: azureCliVersion
+    value: '2.56.0'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  #====================================================================================================
+  # STAGE 1: VALIDATE
+  #====================================================================================================
+  # Validates Bicep templates, performs syntax checking, and runs What-If analysis
+  # to preview changes before deployment.
+  #====================================================================================================
+  - stage: Validate
+    displayName: '🔍 Validate Templates'
+    jobs:
+      - job: ValidateBicep
+        displayName: 'Validate Bicep Templates'
+        steps:
+          # Checkout repository
+          - checkout: self
+            displayName: '📥 Checkout Repository'
+            clean: true
+
+          # Install Azure CLI with Bicep
+          - task: AzureCLI@2
+            displayName: '🔧 Install Bicep CLI'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Installing Bicep CLI..."
+                az bicep version
+                az bicep upgrade
+                echo "Bicep CLI installed successfully"
+
+          # Build Bicep template to ARM JSON
+          - task: AzureCLI@2
+            displayName: '🏗️ Build Bicep Template'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Building Bicep template..."
+                az bicep build --file $(bicepTemplate)
+                
+                if [ -f "$(bicepTemplate).json" ]; then
+                  echo "✅ Bicep template built successfully"
+                  ls -lh $(bicepTemplate).json
+                else
+                  echo "❌ Failed to build Bicep template"
+                  exit 1
+                fi
+
+          # Validate Bicep parameters
+          - task: AzureCLI@2
+            displayName: '🔎 Validate Bicep Parameters'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Validating Bicep parameters file..."
+                
+                # Check if parameters file exists
+                if [ ! -f "$(bicepParameters)" ]; then
+                  echo "❌ Parameters file not found: $(bicepParameters)"
+                  exit 1
+                fi
+                
+                # Build parameters to check for syntax errors
+                az bicep build-params --file $(bicepParameters) --stdout > /dev/null
+                
+                if [ $? -eq 0 ]; then
+                  echo "✅ Parameters file is valid"
+                else
+                  echo "❌ Parameters file validation failed"
+                  exit 1
+                fi
+
+          # Validate deployment with Azure
+          - task: AzureCLI@2
+            displayName: '✔️ Validate Azure Deployment'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Validating Azure deployment..."
+                
+                # Extract subscription ID from parameters file
+                SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                
+                if [ -z "$SUBSCRIPTION_ID" ] || [ "$SUBSCRIPTION_ID" == "" ]; then
+                  echo "❌ Could not extract subscription ID from parameters file"
+                  exit 1
+                fi
+                
+                echo "Using subscription: $SUBSCRIPTION_ID"
+                az account set --subscription "$SUBSCRIPTION_ID"
+                
+                # Extract resource group from parameters (first network config)
+                RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                
+                if [ -z "$RESOURCE_GROUP" ]; then
+                  echo "❌ Could not extract resource group from parameters file"
+                  exit 1
+                fi
+                
+                echo "Target resource group: $RESOURCE_GROUP"
+                
+                # Validate the deployment
+                az deployment group validate \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --template-file $(bicepTemplate) \
+                  --parameters $(bicepParameters) \
+                  --name "$(deploymentName)-validation"
+                
+                if [ $? -eq 0 ]; then
+                  echo "✅ Deployment validation successful"
+                else
+                  echo "❌ Deployment validation failed"
+                  exit 1
+                fi
+
+          # Run What-If deployment preview
+          - task: AzureCLI@2
+            displayName: '📋 What-If Analysis'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Running What-If analysis..."
+                
+                # Extract subscription ID
+                SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                az account set --subscription "$SUBSCRIPTION_ID"
+                
+                # Extract resource group
+                RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "What-If Preview: Changes that will be made to your Azure Stack HCI environment"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az deployment group what-if \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --template-file $(bicepTemplate) \
+                  --parameters $(bicepParameters) \
+                  --name "$(deploymentName)-whatif" \
+                  --no-pretty-print || true
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "What-If analysis completed"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+
+          # Check Azure Stack HCI custom location
+          - task: AzureCLI@2
+            displayName: '🖥️ Verify Azure Stack HCI Custom Location'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Checking Azure Stack HCI custom location..."
+                
+                # Extract subscription ID and custom location details
+                SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                az account set --subscription "$SUBSCRIPTION_ID"
+                
+                RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                CUSTOM_LOCATION=$(grep "parExtendedLocationName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                
+                echo "Checking custom location: $CUSTOM_LOCATION"
+                
+                # Check if custom location exists
+                LOCATION_CHECK=$(az customlocation show \
+                  --name "$CUSTOM_LOCATION" \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+                
+                if [ "$LOCATION_CHECK" == "Succeeded" ]; then
+                  echo "✅ Custom location '$CUSTOM_LOCATION' is available and ready"
+                  
+                  # Get additional details
+                  az customlocation show \
+                    --name "$CUSTOM_LOCATION" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --query "{Name:name, State:provisioningState, Location:location, HostType:hostType}" \
+                    -o table
+                elif [ "$LOCATION_CHECK" == "NotFound" ]; then
+                  echo "⚠️ Warning: Custom location '$CUSTOM_LOCATION' not found"
+                  echo "Please ensure your Azure Stack HCI cluster is properly registered"
+                else
+                  echo "⚠️ Warning: Custom location is in state: $LOCATION_CHECK"
+                fi
+
+          # Publish build artifacts
+          - task: PublishPipelineArtifact@1
+            displayName: '📦 Publish Pipeline Artifacts'
+            inputs:
+              targetPath: '$(workingDirectory)'
+              artifact: 'bicep-templates'
+              publishLocation: 'pipeline'
+
+  #====================================================================================================
+  # STAGE 2: DEPLOY
+  #====================================================================================================
+  # Deploys logical networks to Azure Stack HCI using the validated Bicep templates.
+  # Requires manual approval from the 'production-azlocal' environment.
+  #====================================================================================================
+  - stage: Deploy
+    displayName: '🚀 Deploy Logical Networks'
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: DeployLogicalNetworks
+        displayName: 'Deploy to Azure Stack HCI'
+        environment: 'production-azlocal' # Requires manual approval
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Download artifacts
+                - download: current
+                  artifact: 'bicep-templates'
+                  displayName: '📥 Download Build Artifacts'
+
+                # Deploy using Azure Resource Manager
+                - task: AzureCLI@2
+                  displayName: '🚀 Deploy Logical Networks'
+                  inputs:
+                    azureSubscription: '$(serviceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: '$(Pipeline.Workspace)/bicep-templates'
+                    inlineScript: |
+                      echo "Starting deployment of Azure Stack HCI logical networks..."
+                      echo "Build ID: $(Build.BuildId)"
+                      echo "Deployment Name: $(deploymentName)"
+                      
+                      # Extract subscription and resource group
+                      SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                      az account set --subscription "$SUBSCRIPTION_ID"
+                      
+                      RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                      
+                      echo "Target Subscription: $SUBSCRIPTION_ID"
+                      echo "Target Resource Group: $RESOURCE_GROUP"
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      
+                      # Deploy the template
+                      az deployment group create \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --template-file $(bicepTemplate) \
+                        --parameters $(bicepParameters) \
+                        --name "$(deploymentName)" \
+                        --verbose
+                      
+                      DEPLOYMENT_STATUS=$?
+                      
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      
+                      if [ $DEPLOYMENT_STATUS -eq 0 ]; then
+                        echo "✅ Deployment completed successfully!"
+                        
+                        # Get deployment outputs
+                        echo ""
+                        echo "Deployment Outputs:"
+                        az deployment group show \
+                          --resource-group "$RESOURCE_GROUP" \
+                          --name "$(deploymentName)" \
+                          --query "properties.outputs" \
+                          -o json || true
+                      else
+                        echo "❌ Deployment failed with status code: $DEPLOYMENT_STATUS"
+                        exit $DEPLOYMENT_STATUS
+                      fi
+
+                # Get deployment details
+                - task: AzureCLI@2
+                  displayName: '📊 Get Deployment Details'
+                  inputs:
+                    azureSubscription: '$(serviceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    workingDirectory: '$(Pipeline.Workspace)/bicep-templates'
+                    inlineScript: |
+                      echo "Retrieving deployment details..."
+                      
+                      SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                      az account set --subscription "$SUBSCRIPTION_ID"
+                      
+                      RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                      
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      echo "Deployment Summary"
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      
+                      az deployment group show \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --name "$(deploymentName)" \
+                        --query "{Name:name, State:properties.provisioningState, Timestamp:properties.timestamp, Mode:properties.mode, Duration:properties.duration}" \
+                        -o table
+                      
+                      echo ""
+                      echo "Deployed Resources:"
+                      az deployment group show \
+                        --resource-group "$RESOURCE_GROUP" \
+                        --name "$(deploymentName)" \
+                        --query "properties.outputResources[].id" \
+                        -o table
+
+  #====================================================================================================
+  # STAGE 3: VERIFY
+  #====================================================================================================
+  # Verifies that the logical networks were deployed successfully and are operational.
+  #====================================================================================================
+  - stage: Verify
+    displayName: '✅ Verify Deployment'
+    dependsOn: Deploy
+    condition: succeeded()
+    jobs:
+      - job: VerifyDeployment
+        displayName: 'Verify Logical Networks'
+        steps:
+          # Download artifacts
+          - download: current
+            artifact: 'bicep-templates'
+            displayName: '📥 Download Build Artifacts'
+
+          # Verify logical networks exist
+          - task: AzureCLI@2
+            displayName: '🔍 Verify Logical Networks'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(Pipeline.Workspace)/bicep-templates'
+              inlineScript: |
+                echo "Verifying deployed logical networks..."
+                
+                SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                az account set --subscription "$SUBSCRIPTION_ID"
+                
+                RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Logical Networks Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                # List all logical networks in the resource group
+                LOGICAL_NETWORKS=$(az stack-hci-vm network lnet list \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --query "[].{Name:name, State:properties.provisioningState, VLAN:properties.networkTypeProperties.segmentVlan, AddressPrefix:properties.networkTypeProperties.ipPools[0].ipPoolType}" \
+                  -o table 2>/dev/null || echo "")
+                
+                if [ -n "$LOGICAL_NETWORKS" ]; then
+                  echo "$LOGICAL_NETWORKS"
+                  echo "✅ Logical networks are deployed"
+                else
+                  echo "⚠️ Warning: Could not retrieve logical network details"
+                  echo "This may be expected if using a newer API version"
+                fi
+
+          # Check network configuration details
+          - task: AzureCLI@2
+            displayName: '📊 Check Network Configuration'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(Pipeline.Workspace)/bicep-templates'
+              inlineScript: |
+                echo "Checking network configuration details..."
+                
+                SUBSCRIPTION_ID=$(grep "subscriptionId = " $(bicepParameters) | head -1 | sed "s/.*'\(.*\)'.*/\1/")
+                az account set --subscription "$SUBSCRIPTION_ID"
+                
+                RESOURCE_GROUP=$(grep "parResourceGroupName:" $(bicepParameters) | head -1 | awk '{print $2}' | tr -d "'" | tr -d '"')
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Network Configuration Details"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                # Get network details from deployment outputs
+                az deployment group show \
+                  --resource-group "$RESOURCE_GROUP" \
+                  --name "$(deploymentName)" \
+                  --query "properties.outputResources[].id" \
+                  -o tsv | while read RESOURCE_ID; do
+                  
+                  if [[ $RESOURCE_ID == *"logicalnetworks"* ]]; then
+                    NETWORK_NAME=$(basename "$RESOURCE_ID")
+                    echo ""
+                    echo "Network: $NETWORK_NAME"
+                    echo "─────────────────────────────────────────────────────────────────────"
+                    
+                    az resource show --ids "$RESOURCE_ID" \
+                      --query "{Name:name, Type:type, Location:location, ProvisioningState:properties.provisioningState}" \
+                      -o table 2>/dev/null || echo "Could not retrieve details for $NETWORK_NAME"
+                  fi
+                done
+
+          # Generate deployment report
+          - task: PowerShell@2
+            displayName: '📄 Generate Deployment Report'
+            inputs:
+              targetType: 'inline'
+              workingDirectory: '$(Pipeline.Workspace)/bicep-templates'
+              script: |
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host "Deployment Report - Azure Stack HCI Logical Networks"
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host ""
+                Write-Host "Build Information:"
+                Write-Host "  Build ID:        $(Build.BuildId)"
+                Write-Host "  Build Number:    $(Build.BuildNumber)"
+                Write-Host "  Repository:      $(Build.Repository.Name)"
+                Write-Host "  Branch:          $(Build.SourceBranchName)"
+                Write-Host "  Commit:          $(Build.SourceVersion)"
+                Write-Host "  Triggered By:    $(Build.RequestedFor)"
+                Write-Host ""
+                Write-Host "Deployment Information:"
+                Write-Host "  Deployment Name: $(deploymentName)"
+                Write-Host "  Templates Used:  $(bicepTemplate)"
+                Write-Host "  Parameters File: $(bicepParameters)"
+                Write-Host "  Timestamp:       $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+                Write-Host ""
+                Write-Host "Pipeline Stages:"
+                Write-Host "  ✅ Validate  - Completed"
+                Write-Host "  ✅ Deploy    - Completed"
+                Write-Host "  ✅ Verify    - Completed"
+                Write-Host ""
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host "✅ All stages completed successfully!"
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host ""
+                Write-Host "Next Steps:"
+                Write-Host "  1. Verify logical networks in Azure Portal"
+                Write-Host "  2. Test network connectivity from Azure Stack HCI VMs"
+                Write-Host "  3. Monitor network performance and logs"
+                Write-Host ""

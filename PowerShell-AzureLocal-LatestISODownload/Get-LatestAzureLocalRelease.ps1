@@ -409,20 +409,14 @@ function Start-FileDownloadWithProgress {
                                     $eta = [TimeSpan]::FromSeconds($remainingSeconds)
                                     $speed = Get-FileSizeString -Bytes $bytesPerSecond
                                     
-                                    Write-Progress -Activity "Downloading Azure Local ISO" `
-                                        -Status "$downloadedSize of $totalSize ($progress%) - $speed/s - ETA: $($eta.ToString('hh\:mm\:ss'))" `
-                                        -PercentComplete $progress
+                                    Write-Progress -Activity "Downloading Azure Local ISO" -Status "$downloadedSize of $totalSize ($progress)% - $speed/s - ETA: $($eta.ToString('hh\:mm\:ss'))" -PercentComplete $progress
                                 }
                                 else {
-                                    Write-Progress -Activity "Downloading Azure Local ISO" `
-                                        -Status "$downloadedSize of $totalSize ($progress%)" `
-                                        -PercentComplete $progress
+                                    Write-Progress -Activity "Downloading Azure Local ISO" -Status "$downloadedSize of $totalSize ($progress)%" -PercentComplete $progress
                                 }
                             }
                             else {
-                                Write-Progress -Activity "Downloading Azure Local ISO" `
-                                    -Status "$downloadedSize of $totalSize ($progress%)" `
-                                    -PercentComplete $progress
+                                Write-Progress -Activity "Downloading Azure Local ISO" -Status "$downloadedSize of $totalSize ($progress)%" -PercentComplete $progress
                             }
                             
                             $lastProgress = $progress
@@ -514,14 +508,10 @@ function Start-FileDownloadWithProgress {
                                     $eta = [TimeSpan]::FromSeconds($remainingSeconds)
                                     $speed = Get-FileSizeString -Bytes $bytesPerSecond
                                     
-                                    Write-Progress -Activity "Downloading Azure Local ISO" `
-                                        -Status "$downloadedSize of $totalSize ($progress%) - $speed/s - ETA: $($eta.ToString('hh\:mm\:ss'))" `
-                                        -PercentComplete $progress
+                                    Write-Progress -Activity "Downloading Azure Local ISO" -Status "$downloadedSize of $totalSize ($progress)% - $speed/s - ETA: $($eta.ToString('hh\:mm\:ss'))" -PercentComplete $progress
                                 }
                                 else {
-                                    Write-Progress -Activity "Downloading Azure Local ISO" `
-                                        -Status "$downloadedSize of $totalSize ($progress%)" `
-                                        -PercentComplete $progress
+                                    Write-Progress -Activity "Downloading Azure Local ISO" -Status "$downloadedSize of $totalSize ($progress)%" -PercentComplete $progress
                                 }
                             }
                             

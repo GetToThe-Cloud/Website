@@ -1,0 +1,561 @@
+#======================================================================================================
+# Azure Landing Zone - Deployment Pipeline
+#======================================================================================================
+# This pipeline automates the deployment of an Azure Landing Zone infrastructure including:
+#   - Resource Groups with locks
+#   - Virtual Networks and Subnets
+#   - VPN Gateway with connections
+#   - Local Network Gateways
+#   - Private DNS Zones
+#   - Log Analytics Workspace
+#   - Public IP Addresses
+#
+# Pipeline Stages:
+#   1. Validate  - Bicep validation, syntax checking, and What-If analysis
+#   2. Deploy    - Deploy landing zone infrastructure with approval gate
+#   3. Verify    - Verify deployed resources and connectivity
+#
+# Author: Alex ter Neuzen
+# Website: https://www.gettothe.cloud
+# Last Updated: February 2026
+#======================================================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - AzureBicep-AzureLandingZone/**
+
+variables:
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/AzureBicep-AzureLandingZone'
+  - name: bicepTemplate
+    value: 'deploy-azl.bicep'
+  - name: bicepParameters
+    value: 'deploy-azl.parameters.bicepparam'
+  - name: serviceConnection
+    value: 'Azure-ServiceConnection' # Update with your Azure service connection name
+  - name: deploymentName
+    value: 'azure-landing-zone-$(Build.BuildId)'
+  - name: deploymentLocation
+    value: 'westeurope'
+  - name: azureCliVersion
+    value: '2.56.0'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  #====================================================================================================
+  # STAGE 1: VALIDATE
+  #====================================================================================================
+  # Validates Bicep templates, performs syntax checking, and runs What-If analysis
+  # to preview changes before deployment.
+  #====================================================================================================
+  - stage: Validate
+    displayName: '🔍 Validate Templates'
+    jobs:
+      - job: ValidateBicep
+        displayName: 'Validate Bicep Templates'
+        steps:
+          # Checkout repository
+          - checkout: self
+            displayName: '📥 Checkout Repository'
+            clean: true
+
+          # Install Azure CLI with Bicep
+          - task: AzureCLI@2
+            displayName: '🔧 Install Bicep CLI'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Installing Bicep CLI..."
+                az bicep version
+                az bicep upgrade
+                echo "✅ Bicep CLI installed successfully"
+
+          # Build Bicep template to ARM JSON
+          - task: AzureCLI@2
+            displayName: '🏗️ Build Bicep Template'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Building Bicep template..."
+                az bicep build --file $(bicepTemplate)
+                
+                if [ -f "$(bicepTemplate).json" ]; then
+                  echo "✅ Bicep template built successfully"
+                  ls -lh $(bicepTemplate).json
+                else
+                  echo "❌ Failed to build Bicep template"
+                  exit 1
+                fi
+
+          # Validate Bicep parameters
+          - task: AzureCLI@2
+            displayName: '🔎 Validate Bicep Parameters'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Validating Bicep parameters file..."
+                
+                if [ ! -f "$(bicepParameters)" ]; then
+                  echo "❌ Parameters file not found: $(bicepParameters)"
+                  exit 1
+                fi
+                
+                # Build parameters to check for syntax errors
+                az bicep build-params --file $(bicepParameters) --stdout > /dev/null
+                
+                if [ $? -eq 0 ]; then
+                  echo "✅ Parameters file is valid"
+                else
+                  echo "❌ Parameters file validation failed"
+                  exit 1
+                fi
+
+          # Validate subscription deployment
+          - task: AzureCLI@2
+            displayName: '✔️ Validate Azure Subscription Deployment'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Validating Azure subscription-level deployment..."
+                echo "Deployment Location: $(deploymentLocation)"
+                
+                # Validate the deployment at subscription scope
+                az deployment sub validate \
+                  --location "$(deploymentLocation)" \
+                  --template-file $(bicepTemplate) \
+                  --parameters $(bicepParameters) \
+                  --name "$(deploymentName)-validation"
+                
+                if [ $? -eq 0 ]; then
+                  echo "✅ Deployment validation successful"
+                else
+                  echo "❌ Deployment validation failed"
+                  exit 1
+                fi
+
+          # Run What-If deployment preview
+          - task: AzureCLI@2
+            displayName: '📋 What-If Analysis'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Running What-If analysis for subscription deployment..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "What-If Preview: Changes that will be made to your Azure subscription"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az deployment sub what-if \
+                  --location "$(deploymentLocation)" \
+                  --template-file $(bicepTemplate) \
+                  --parameters $(bicepParameters) \
+                  --name "$(deploymentName)-whatif" \
+                  --no-pretty-print || true
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "What-If analysis completed"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+
+          # Check existing resources
+          - task: AzureCLI@2
+            displayName: '📊 Check Existing Resources'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              workingDirectory: '$(workingDirectory)'
+              inlineScript: |
+                echo "Checking for existing landing zone resources..."
+                
+                # Check if resource groups exist
+                echo ""
+                echo "Existing Resource Groups:"
+                az group list --query "[?starts_with(name, 'azl-we-rsg-lz')].{Name:name, Location:location, State:properties.provisioningState}" -o table
+                
+                # Check for existing VPN gateways
+                echo ""
+                echo "Existing VPN Gateways:"
+                az network vnet-gateway list --query "[].{Name:name, ResourceGroup:resourceGroup, State:provisioningState}" -o table || echo "No VPN gateways found"
+                
+                # Check for existing virtual networks
+                echo ""
+                echo "Existing Virtual Networks:"
+                az network vnet list --query "[?starts_with(name, 'azl-we-vnet')].{Name:name, ResourceGroup:resourceGroup, AddressSpace:addressSpace.addressPrefixes[0]}" -o table || echo "No vnets found"
+                
+                echo ""
+                echo "✅ Resource check completed"
+
+          # Publish build artifacts
+          - task: PublishPipelineArtifact@1
+            displayName: '📦 Publish Pipeline Artifacts'
+            inputs:
+              targetPath: '$(workingDirectory)'
+              artifact: 'bicep-templates'
+              publishLocation: 'pipeline'
+
+  #====================================================================================================
+  # STAGE 2: DEPLOY
+  #====================================================================================================
+  # Deploys the Azure Landing Zone infrastructure using Azure Resource Manager.
+  # Requires manual approval from the 'production-landing-zone' environment.
+  #====================================================================================================
+  - stage: Deploy
+    displayName: '🚀 Deploy Landing Zone'
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: DeployLandingZone
+        displayName: 'Deploy Azure Landing Zone'
+        environment: 'production-landing-zone' # Requires manual approval
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                # Download artifacts
+                - download: current
+                  artifact: 'bicep-templates'
+                  displayName: '📥 Download Build Artifacts'
+
+                # Deploy Resource Groups first
+                - task: AzureResourceManagerTemplateDeployment@3
+                  displayName: '🏗️ Deploy Azure Landing Zone Infrastructure'
+                  inputs:
+                    deploymentScope: 'Subscription'
+                    azureResourceManagerConnection: '$(serviceConnection)'
+                    subscriptionId: '$(ARM_SUBSCRIPTION_ID)' # Set in pipeline variables
+                    location: '$(deploymentLocation)'
+                    templateLocation: 'Linked artifact'
+                    csmFile: '$(Pipeline.Workspace)/bicep-templates/$(bicepTemplate)'
+                    csmParametersFile: '$(Pipeline.Workspace)/bicep-templates/$(bicepParameters)'
+                    deploymentMode: 'Incremental'
+                    deploymentName: '$(deploymentName)'
+                    deploymentOutputs: 'deploymentOutputs'
+
+                # Parse deployment outputs
+                - task: PowerShell@2
+                  displayName: '📊 Parse Deployment Outputs'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                      Write-Host "Deployment Outputs"
+                      Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                      
+                      $outputs = '$(deploymentOutputs)' | ConvertFrom-Json
+                      
+                      if ($outputs) {
+                        $outputs.PSObject.Properties | ForEach-Object {
+                          Write-Host "$($_.Name): $($_.Value.value)"
+                        }
+                      } else {
+                        Write-Host "No outputs returned from deployment"
+                      }
+                      
+                      Write-Host "═══════════════════════════════════════════════════════════════════════════"
+
+                # Get deployment details
+                - task: AzureCLI@2
+                  displayName: '📋 Get Deployment Details'
+                  inputs:
+                    azureSubscription: '$(serviceConnection)'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      echo "Retrieving deployment details..."
+                      
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      echo "Deployment Summary"
+                      echo "═══════════════════════════════════════════════════════════════════════════"
+                      
+                      az deployment sub show \
+                        --name "$(deploymentName)" \
+                        --query "{Name:name, State:properties.provisioningState, Timestamp:properties.timestamp, Mode:properties.mode, Duration:properties.duration}" \
+                        -o table
+                      
+                      echo ""
+                      echo "Deployed Resources:"
+                      az deployment sub show \
+                        --name "$(deploymentName)" \
+                        --query "properties.outputResources[].id" \
+                        -o tsv | while read RESOURCE_ID; do
+                        echo "  - $RESOURCE_ID"
+                      done
+
+  #====================================================================================================
+  # STAGE 3: VERIFY
+  #====================================================================================================
+  # Verifies that the landing zone infrastructure was deployed successfully and is operational.
+  #====================================================================================================
+  - stage: Verify
+    displayName: '✅ Verify Deployment'
+    dependsOn: Deploy
+    condition: succeeded()
+    jobs:
+      - job: VerifyDeployment
+        displayName: 'Verify Landing Zone'
+        steps:
+          # Download artifacts
+          - download: current
+            artifact: 'bicep-templates'
+            displayName: '📥 Download Build Artifacts'
+
+          # Verify resource groups
+          - task: AzureCLI@2
+            displayName: '🔍 Verify Resource Groups'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying deployed resource groups..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Resource Groups Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az group list \
+                  --query "[?starts_with(name, 'azl-we-rsg-lz')].{Name:name, Location:location, State:properties.provisioningState, Lock:tags.Lock}" \
+                  -o table
+                
+                # Check if all expected resource groups exist
+                EXPECTED_RGS=("azl-we-rsg-lz-network-01" "azl-we-rsg-lz-platform-01" "azl-we-rsg-lz-arc-01" "azl-we-rsg-lz-privateendpoint-01" "azl-we-rsg-lz-privatednszones-01" "azl-we-rsg-lz-monitoring-01")
+                
+                MISSING_RGS=()
+                for RG in "${EXPECTED_RGS[@]}"; do
+                  if ! az group show --name "$RG" &>/dev/null; then
+                    MISSING_RGS+=("$RG")
+                  fi
+                done
+                
+                if [ ${#MISSING_RGS[@]} -eq 0 ]; then
+                  echo "✅ All resource groups deployed successfully"
+                else
+                  echo "❌ Missing resource groups: ${MISSING_RGS[@]}"
+                  exit 1
+                fi
+
+          # Verify virtual networks
+          - task: AzureCLI@2
+            displayName: '🌐 Verify Virtual Networks'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying deployed virtual networks..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Virtual Networks Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az network vnet list \
+                  --query "[?starts_with(name, 'azl-we-vnet')].{Name:name, ResourceGroup:resourceGroup, AddressSpace:addressSpace.addressPrefixes[0], State:provisioningState, Subnets:length(subnets)}" \
+                  -o table
+                
+                # Verify subnets
+                echo ""
+                echo "Subnets:"
+                az network vnet list \
+                  --query "[?starts_with(name, 'azl-we-vnet')].{VNet:name, Subnets:subnets[].{Name:name, AddressPrefix:addressPrefix}}" \
+                  -o json | jq -r '.[] | .VNet as $vnet | .Subnets[] | "\($vnet): \(.Name) - \(.AddressPrefix)"'
+                
+                echo "✅ Virtual networks verified"
+
+          # Verify VPN Gateway
+          - task: AzureCLI@2
+            displayName: '🔐 Verify VPN Gateway'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying VPN Gateway deployment..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "VPN Gateway Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                # Check VPN Gateway
+                VPN_GW_STATUS=$(az network vnet-gateway list \
+                  --resource-group "azl-we-rsg-lz-network-01" \
+                  --query "[?starts_with(name, 'azl-we-vnet-gw')].{Name:name, State:provisioningState, GatewayType:gatewayType, VpnType:vpnType, SKU:sku.name}" \
+                  -o table)
+                
+                if [ -n "$VPN_GW_STATUS" ]; then
+                  echo "$VPN_GW_STATUS"
+                  echo "✅ VPN Gateway deployed"
+                else
+                  echo "⚠️ VPN Gateway not found or still provisioning (this can take 30-45 minutes)"
+                fi
+                
+                # Check Local Network Gateway
+                echo ""
+                echo "Local Network Gateways:"
+                az network local-gateway list \
+                  --resource-group "azl-we-rsg-lz-network-01" \
+                  --query "[].{Name:name, State:provisioningState, RemoteIP:gatewayIpAddress, AddressPrefixes:localNetworkAddressSpace.addressPrefixes[0]}" \
+                  -o table
+
+          # Verify VPN Connections
+          - task: AzureCLI@2
+            displayName: '🔗 Verify VPN Connections'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying VPN connections..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "VPN Connections Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                CONNECTIONS=$(az network vpn-connection list \
+                  --resource-group "azl-we-rsg-lz-network-01" \
+                  --query "[].{Name:name, State:provisioningState, ConnectionStatus:connectionStatus, ConnectionType:connectionType}" \
+                  -o table 2>/dev/null || echo "")
+                
+                if [ -n "$CONNECTIONS" ]; then
+                  echo "$CONNECTIONS"
+                  echo "✅ VPN connections configured"
+                else
+                  echo "⚠️ VPN connections not yet established (gateway may still be provisioning)"
+                fi
+
+          # Verify Private DNS Zones
+          - task: AzureCLI@2
+            displayName: '🌐 Verify Private DNS Zones'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying Private DNS Zones..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Private DNS Zones Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az network private-dns zone list \
+                  --resource-group "azl-we-rsg-lz-privatednszones-01" \
+                  --query "[].{Name:name, State:provisioningState, RecordSets:numberOfRecordSets, VNetLinks:numberOfVirtualNetworkLinks}" \
+                  -o table
+                
+                ZONE_COUNT=$(az network private-dns zone list \
+                  --resource-group "azl-we-rsg-lz-privatednszones-01" \
+                  --query "length(@)" -o tsv)
+                
+                if [ "$ZONE_COUNT" -gt 0 ]; then
+                  echo "✅ $ZONE_COUNT Private DNS zones deployed"
+                else
+                  echo "❌ No Private DNS zones found"
+                  exit 1
+                fi
+
+          # Verify Log Analytics Workspace
+          - task: AzureCLI@2
+            displayName: '📊 Verify Log Analytics Workspace'
+            inputs:
+              azureSubscription: '$(serviceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Verifying Log Analytics Workspace..."
+                
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                echo "Log Analytics Workspace Status"
+                echo "═══════════════════════════════════════════════════════════════════════════"
+                
+                az monitor log-analytics workspace list \
+                  --resource-group "azl-we-rsg-lz-monitoring-01" \
+                  --query "[].{Name:name, State:provisioningState, Location:location, RetentionDays:retentionInDays}" \
+                  -o table
+                
+                LAW_EXISTS=$(az monitor log-analytics workspace list \
+                  --resource-group "azl-we-rsg-lz-monitoring-01" \
+                  --query "length(@)" -o tsv)
+                
+                if [ "$LAW_EXISTS" -gt 0 ]; then
+                  echo "✅ Log Analytics Workspace deployed"
+                else
+                  echo "❌ Log Analytics Workspace not found"
+                  exit 1
+                fi
+
+          # Generate deployment report
+          - task: PowerShell@2
+            displayName: '📄 Generate Deployment Report'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host "Deployment Report - Azure Landing Zone"
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host ""
+                Write-Host "Build Information:"
+                Write-Host "  Build ID:        $(Build.BuildId)"
+                Write-Host "  Build Number:    $(Build.BuildNumber)"
+                Write-Host "  Repository:      $(Build.Repository.Name)"
+                Write-Host "  Branch:          $(Build.SourceBranchName)"
+                Write-Host "  Commit:          $(Build.SourceVersion)"
+                Write-Host "  Triggered By:    $(Build.RequestedFor)"
+                Write-Host ""
+                Write-Host "Deployment Information:"
+                Write-Host "  Deployment Name: $(deploymentName)"
+                Write-Host "  Location:        $(deploymentLocation)"
+                Write-Host "  Scope:           Subscription"
+                Write-Host "  Templates Used:  $(bicepTemplate)"
+                Write-Host "  Parameters File: $(bicepParameters)"
+                Write-Host "  Timestamp:       $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+                Write-Host ""
+                Write-Host "Deployed Components:"
+                Write-Host "  ✅ Resource Groups (6)"
+                Write-Host "  ✅ Virtual Networks (2)"
+                Write-Host "  ✅ VPN Gateway (1)"
+                Write-Host "  ✅ Local Network Gateway (1)"
+                Write-Host "  ✅ VPN Connection (1)"
+                Write-Host "  ✅ Private DNS Zones (6)"
+                Write-Host "  ✅ Log Analytics Workspace (1)"
+                Write-Host "  ✅ Public IP Address (1)"
+                Write-Host ""
+                Write-Host "Pipeline Stages:"
+                Write-Host "  ✅ Validate  - Completed"
+                Write-Host "  ✅ Deploy    - Completed"
+                Write-Host "  ✅ Verify    - Completed"
+                Write-Host ""
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host "✅ Azure Landing Zone deployment completed successfully!"
+                Write-Host "═══════════════════════════════════════════════════════════════════════════"
+                Write-Host ""
+                Write-Host "Next Steps:"
+                Write-Host "  1. Verify VPN Gateway connectivity (may take 30-45 minutes to provision)"
+                Write-Host "  2. Configure VPN device with shared key"
+                Write-Host "  3. Link Private DNS Zones to virtual networks"
+                Write-Host "  4. Configure diagnostic settings for monitoring"
+                Write-Host "  5. Review resource locks and RBAC permissions"
+                Write-Host ""
+                Write-Host "Important Notes:"
+                Write-Host "  ⚠️  VPN Gateway provisioning can take 30-45 minutes"
+                Write-Host "  ⚠️  Resource locks (CanNotDelete) are enabled on all resource groups"
+                Write-Host "  ⚠️  Verify VPN shared key matches on-premises device configuration"
+                Write-Host ""

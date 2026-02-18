@@ -10,6 +10,8 @@ The templates in this repository enable automated deployment of logical networks
 
 - **azlocal-logical-network.bicep** - Main Bicep template that deploys logical networks using a modular, array-based approach
 - **azlocal-logical-network.parameters.bicepparam** - Parameter file containing network configurations
+- **DevOps Pipeline/azure-pipelines.yml** - Azure DevOps CI/CD pipeline for automated deployment
+- **DevOps Pipeline/PIPELINE-SETUP.md** - Complete guide for setting up the deployment pipeline
 
 ## Features
 
@@ -96,7 +98,25 @@ param paramsNetworks = [
 ]
 ```
 
-### 2. Deploy Using Azure CLI
+### 2. Deploy Using Azure DevOps Pipeline (Recommended)
+
+For automated, repeatable deployments with approval gates and validation:
+
+1. **Import the pipeline** from [DevOps Pipeline/azure-pipelines.yml](DevOps%20Pipeline/azure-pipelines.yml)
+2. **Configure the environment** and service connection
+3. **Update parameters** in the bicepparam file
+4. **Push to main branch** to trigger automatic deployment
+
+**Pipeline Features**:
+- ✅ Automated validation with What-If analysis
+- ✅ Bicep build and syntax checking
+- ✅ Custom location verification
+- ✅ Manual approval gate before deployment
+- ✅ Automated verification and reporting
+
+See [DevOps Pipeline/PIPELINE-SETUP.md](DevOps%20Pipeline/PIPELINE-SETUP.md) for complete setup instructions.
+
+### 3. Deploy Using Azure CLI
 
 ```bash
 # Login to Azure
@@ -113,7 +133,7 @@ az deployment sub create \
   --parameters azlocal-logical-network.parameters.bicepparam
 ```
 
-### 3. Deploy Using PowerShell
+### 4. Deploy Using PowerShell
 
 ```powershell
 # Login to Azure
