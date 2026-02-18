@@ -1,6 +1,6 @@
-# Azure Stack HCI Custom Image Management
+# Azure Local Custom Image Management
 
-Comprehensive solution for importing and managing custom VM images from Azure Compute Gallery to Azure Stack HCI clusters. This repository provides both manual PowerShell scripts and automated Azure DevOps pipelines for image lifecycle management.
+Comprehensive solution for importing and managing custom VM images from Azure Compute Gallery to Azure Local clusters. This repository provides both manual PowerShell scripts and automated Azure DevOps pipelines for image lifecycle management.
 
 ## 📋 Table of Contents
 
@@ -19,7 +19,7 @@ Comprehensive solution for importing and managing custom VM images from Azure Co
 
 ## 🎯 Overview
 
-This solution automates the process of maintaining consistent VM golden images across Azure and on-premises Azure Stack HCI environments. It enables centralized image management through Azure Compute Gallery while providing automated import and cleanup capabilities for HCI clusters.
+This solution automates the process of maintaining consistent VM golden images across Azure and on-premises Azure Local environments. It enables centralized image management through Azure Compute Gallery while providing automated import and cleanup capabilities for HCI clusters.
 
 ### Key Capabilities
 
@@ -57,7 +57,7 @@ This solution automates the process of maintaining consistent VM golden images a
 ### Azure Resources
 
 - Azure Compute Gallery with image definitions
-- Azure Stack HCI cluster (22H2 or later)
+- Azure Local cluster (22H2 or later)
 - Custom Location bound to HCI cluster
 - Storage path configured on HCI cluster
 - Resource groups for HCI and gallery resources
@@ -84,7 +84,7 @@ Temporary Managed Disk
        ↓
    SAS Token
        ↓
-Azure Stack HCI Cluster
+Azure Local Cluster
        ↓
   VM Deployments
 ```
@@ -637,7 +637,7 @@ az config set core.only_show_errors=false
 
 ### Microsoft Documentation
 
-- [Azure Stack HCI Overview](https://learn.microsoft.com/azure/azure-local/)
+- [Azure Local Overview](https://learn.microsoft.com/azure/azure-local/)
 - [Azure Compute Gallery](https://learn.microsoft.com/azure/virtual-machines/azure-compute-gallery)
 - [Custom Locations](https://learn.microsoft.com/azure/azure-arc/platform/conceptual-custom-locations)
 - [Az PowerShell Modules](https://learn.microsoft.com/powershell/azure/)
@@ -645,7 +645,7 @@ az config set core.only_show_errors=false
 
 ### Related Repositories
 
-- [Azure Stack HCI Documentation](https://github.com/MicrosoftDocs/azure-stack-docs)
+- [Azure Local Documentation](https://github.com/MicrosoftDocs/azure-stack-docs)
 - [Azure Arc Jumpstart](https://github.com/microsoft/azure_arc)
 
 ## 🤝 Contributing
@@ -676,7 +676,7 @@ This project is licensed under the MIT License - see LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
-- Microsoft Azure Stack HCI team
+- Microsoft Azure Local team
 - Azure PowerShell team
 - Community contributors
 
@@ -687,7 +687,7 @@ This project is licensed under the MIT License - see LICENSE file for details.
 For issues and questions:
 
 1. Check [Troubleshooting](#troubleshooting) section
-2. Review [Azure Stack HCI documentation](https://learn.microsoft.com/azure/azure-local/)
+2. Review [Azure Local documentation](https://learn.microsoft.com/azure/azure-local/)
 3. Open an issue in this repository
 4. Contact Microsoft Support for critical production issues
 
