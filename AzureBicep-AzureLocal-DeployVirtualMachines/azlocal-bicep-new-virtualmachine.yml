@@ -1,0 +1,230 @@
+trigger:
+- none
+
+parameters:
+- name: vmName
+  displayName: 'Virtual Machine Name'
+  type: string
+  default: 'Test-VM'
+
+- name: imageName
+  displayName: 'Select Image'
+  type: string
+  default: '2025-datacenter-azure-edition-02'
+  values:
+  - '11-252-3'
+  - '2022-datacenter-azure-edition-02'
+  - '2025-datacenter-azure-edition-01'
+  - '2025-datacenter-azure-edition-02'
+  - 'win11-25h2-avd-m365-01'
+
+- name: processorCores
+  displayName: 'Processor Cores'
+  type: number
+  default: 4
+  values:
+  - 2
+  - 4
+  - 8
+  - 16
+
+- name: memoryInGB
+  displayName: 'Memory (GB)'
+  type: number
+  default: 8
+  values:
+  - 4
+  - 8
+  - 16
+  - 32
+
+- name: environment
+  displayName: 'Environment'
+  type: string
+  default: 'Production'
+  values:
+  - 'Production'
+  - 'Development'
+  - 'Test'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- group: 'azlocal-defaults'
+- name: templateFile
+  value: '$(Build.SourcesDirectory)/azlocal-bicep-new-virtualmachine/azlocal-bicep-new-virtualmachine.bicep'
+- name: parametersFile
+  value: '$(Build.SourcesDirectory)/azlocal-bicep-new-virtualmachine/azlocal-bicep-new-virtualmachine.parameters.bicepparam'
+- name: deploymentName
+  value: 'vm-${{ parameters.vmName }}-$(Build.BuildNumber)'
+
+stages:
+- stage: Validate
+  displayName: 'Validate Bicep Template'
+  jobs:
+  - job: ValidateBicep
+    displayName: 'Validate Bicep'
+    steps:
+    - task: PowerShell@2
+      displayName: 'Display Deployment Parameters'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "===================================="
+          Write-Host "Deployment Parameters"
+          Write-Host "===================================="
+          Write-Host "VM Name: ${{ parameters.vmName }}"
+          Write-Host "Image: ${{ parameters.imageName }}"
+          Write-Host "Processor Cores: ${{ parameters.processorCores }}"
+          Write-Host "Memory (GB): ${{ parameters.memoryInGB }}"
+          Write-Host "Environment: ${{ parameters.environment }}"
+          Write-Host "Resource Group: $(resourceGroupName)"
+          Write-Host "===================================="
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Validate Bicep Template'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(azureSubscription)
+        subscriptionId: $(subscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(resourceGroupName)
+        location: $(location)
+        templateLocation: 'Linked artifact'
+        csmFile: $(templateFile)
+        csmParametersFile: $(parametersFile)
+        overrideParameters: '-name "${{ parameters.vmName }}" -imageName "${{ parameters.imageName }}" -processorCores ${{ parameters.processorCores }} -memoryInGB ${{ parameters.memoryInGB }}'
+        deploymentMode: 'Validation'
+
+- stage: CheckExistence
+  displayName: 'Check VM Existence'
+  jobs:
+  - job: CheckVM
+    displayName: 'Check if VM exists'
+    steps:
+    - task: AzureCLI@2
+      displayName: 'Check for existing VM'
+      name: CheckVMTask
+      inputs:
+        azureSubscription: $(azureSubscription)
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Checking if VM '${{ parameters.vmName }}' exists in resource group '$(resourceGroupName)'..."
+
+          # Check if VM exists
+          vmExists=$(az hybridcompute machine show \
+            --name "${{ parameters.vmName }}" \
+            --resource-group $(resourceGroupName) \
+            --subscription $(subscriptionId) \
+            --query "name" -o tsv 2>/dev/null || echo "")
+
+          if [ -n "$vmExists" ]; then
+            echo "##vso[task.logissue type=error]VM '${{ parameters.vmName }}' already exists in resource group '$(resourceGroupName)'"
+            echo "##vso[task.complete result=Failed;]VM already exists"
+            exit 1
+          else
+            echo "VM '${{ parameters.vmName }}' does not exist. Proceeding with deployment."
+          fi
+
+- stage: Deploy
+  displayName: 'Deploy to Azure Local'
+  dependsOn: CheckExistence
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployVirtualMachine
+    displayName: 'Deploy VM - ${{ parameters.vmName }}'
+    environment: 'Azure-Local-${{ parameters.environment }}'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+
+          - task: PowerShell@2
+            displayName: 'Pre-Deployment Summary'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "========================================="
+                Write-Host "Starting VM Deployment"
+                Write-Host "========================================="
+                Write-Host "VM Name: ${{ parameters.vmName }}"
+                Write-Host "Image: ${{ parameters.imageName }}"
+                Write-Host "Configuration: ${{ parameters.processorCores }} cores / ${{ parameters.memoryInGB }} GB RAM"
+                Write-Host "Environment: ${{ parameters.environment }}"
+                Write-Host "Deployment Name: $(deploymentName)"
+                Write-Host "========================================="
+
+          - task: AzureResourceManagerTemplateDeployment@3
+            displayName: 'Deploy Bicep Template'
+            name: BicepDeployment
+            inputs:
+              deploymentScope: 'Resource Group'
+              azureResourceManagerConnection: $(azureSubscription)
+              subscriptionId: $(subscriptionId)
+              action: 'Create Or Update Resource Group'
+              resourceGroupName: $(resourceGroupName)
+              location: $(location)
+              templateLocation: 'Linked artifact'
+              csmFile: $(templateFile)
+              csmParametersFile: $(parametersFile)
+              overrideParameters: '-name "${{ parameters.vmName }}" -imageName "${{ parameters.imageName }}" -processorCores ${{ parameters.processorCores }} -memoryInGB ${{ parameters.memoryInGB }}'
+              deploymentMode: 'Incremental'
+              deploymentName: $(deploymentName)
+              deploymentOutputs: 'deploymentOutputs'
+
+          - task: PowerShell@2
+            displayName: 'Display Deployment Outputs'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "========================================="
+                Write-Host "Deployment Completed Successfully!"
+                Write-Host "========================================="
+                Write-Host "VM Name: ${{ parameters.vmName }}"
+                Write-Host "Deployment Name: $(deploymentName)"
+
+                if ($env:DEPLOYMENTOUTPUTS) {
+                  Write-Host ""
+                  Write-Host "Deployment Outputs:"
+                  Write-Host $env:DEPLOYMENTOUTPUTS
+                }
+                Write-Host "========================================="
+            env:
+              DEPLOYMENTOUTPUTS: $(deploymentOutputs)
+
+          - task: AzureCLI@2
+            displayName: 'Update Arc Gateway Settings'
+            inputs:
+              azureSubscription: $(azureSubscription)
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                echo "Updating Arc Gateway settings for VM: ${{ parameters.vmName }}..."
+
+                az arcgateway settings update \
+                  --resource-group $(resourceGroupName) \
+                  --subscription $(subscriptionId) \
+                  --base-provider Microsoft.HybridCompute \
+                  --base-resource-type machines \
+                  --base-resource-name "${{ parameters.vmName }}" \
+                  --gateway-resource-id "/subscriptions/$(subscriptionId)/resourceGroups/$(arcGwRsg)/providers/Microsoft.HybridCompute/gateways/$(arcGwName)"
+
+                echo "Arc Gateway settings updated successfully!"
+
+          - task: PowerShell@2
+            displayName: 'Post-Deployment Summary'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "========================================="
+                Write-Host "VM Deployment Complete"
+                Write-Host "========================================="
+                Write-Host "VM Name: ${{ parameters.vmName }}"
+                Write-Host "Image: ${{ parameters.imageName }}"
+                Write-Host "Specs: ${{ parameters.processorCores }} vCPU / ${{ parameters.memoryInGB }} GB RAM"
+                Write-Host "Status: Successfully deployed and configured"
+                Write-Host "Arc Gateway: Configured"
+                Write-Host "========================================="
