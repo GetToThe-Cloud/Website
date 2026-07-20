@@ -43,7 +43,7 @@ resource resRsgDnszones 'Microsoft.Resources/resourceGroups@2025-04-01' existing
   name: '${prefix}-${region}-rsg-lz-privatednszones-01'
 }
 
-module modLogAnalyticsWorkspace 'br/public:avm/res/operational-insights/workspace:0.15.0' = [
+module modLogAnalyticsWorkspace 'br/public:avm/res/operational-insights/workspace:0.16.0' = [
   for law in logAnalyticsWorkspaces: {
     name: 'law-deploy-${law.name}'
     dependsOn: [resourceGroup]
@@ -55,7 +55,7 @@ module modLogAnalyticsWorkspace 'br/public:avm/res/operational-insights/workspac
   }
 ]
 
-module modVirtualNetworks 'br/public:avm/res/network/virtual-network:0.7.2' = [
+module modVirtualNetworks 'br/public:avm/res/network/virtual-network:0.9.0' = [
   for vnet in virtualNetworks: {
     name: 'vnet-deploy-${vnet.name}'
     dependsOn: [resourceGroup, modLogAnalyticsWorkspace]
@@ -85,7 +85,7 @@ module modVirtualNetworks 'br/public:avm/res/network/virtual-network:0.7.2' = [
   }
 ]
 
-module modpublicIpAddresses 'br/public:avm/res/network/public-ip-address:0.5.1' = [for pip in publicIpAddresses: {
+module modpublicIpAddresses 'br/public:avm/res/network/public-ip-address:0.12.0' = [for pip in publicIpAddresses: {
   name: 'public-ip-deploy-${pip.name}'
   scope: resRsgNetwork
   params: {
@@ -97,7 +97,7 @@ module modpublicIpAddresses 'br/public:avm/res/network/public-ip-address:0.5.1' 
   }
 }]  
 
-module modVirtualNetworkGateways 'br/public:avm/res/network/virtual-network-gateway:0.10.1' = [
+module modVirtualNetworkGateways 'br/public:avm/res/network/virtual-network-gateway:0.11.1' = [
   for vnetGw in virtualNetworkGateways: {
     name: 'vnet-gw-deploy-${vnetGw.name}'
     dependsOn: [modVirtualNetworks,modpublicIpAddresses]
@@ -116,7 +116,7 @@ module modVirtualNetworkGateways 'br/public:avm/res/network/virtual-network-gate
   }
 ]
 
-module modConnection 'br/public:avm/res/network/connection:0.1.6' = [
+module modConnection 'br/public:avm/res/network/connection:0.1.7' = [
   for (connection, i) in vpnConnections: {
     scope: resRsgNetwork
     name: 'connection-deploy-${connection.name}'
@@ -133,7 +133,7 @@ module modConnection 'br/public:avm/res/network/connection:0.1.6' = [
   }
 ]
 
-module modDnsZones 'br/public:avm/res/network/private-dns-zone:0.5.0' = [
+module modDnsZones 'br/public:avm/res/network/private-dns-zone:0.8.1' = [
   for dnsZone in dnsZones: {
     name: 'dnszone-deploy-${dnsZone.name}'
     scope: resRsgDnszones
