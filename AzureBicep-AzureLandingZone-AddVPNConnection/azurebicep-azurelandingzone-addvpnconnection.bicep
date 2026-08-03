@@ -53,7 +53,7 @@ module modLocalNetworkGateways 'br/public:avm/res/network/local-network-gateway:
 // Deploy VPN Connections
 // ============================================================================
 
-module modConnection 'br/public:avm/res/network/connection:0.1.6' = [
+module modConnection 'br/public:avm/res/network/connection:0.1.7' = [
   for (connection, i) in vpnConnections: {
     name: 'connection-deploy-${connection.name}'
     dependsOn: [modLocalNetworkGateways]
