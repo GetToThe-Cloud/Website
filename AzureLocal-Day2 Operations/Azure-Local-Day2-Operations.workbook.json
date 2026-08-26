@@ -1,0 +1,655 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# Azure Local Day 2 Operations\nA single operational workbook for continuous capacity, performance, balance and data-quality monitoring."
+      },
+      "name": "Header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "fedb08e0-148c-42ff-92ec-7f7cebeba2b8",
+            "version": "KqlParameterItem/1.0",
+            "name": "SelectedTab",
+            "type": 1,
+            "isGlobal": true,
+            "isHiddenWhenLocked": true,
+            "value": "overview"
+          },
+          {
+            "id": "2f3e46ab-28e8-4d44-8435-a2b0ad088861",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                },
+                {
+                  "durationMs": 7776000000
+                }
+              ]
+            }
+          },
+          {
+            "id": "85d861c1-0b3f-4208-b5f7-cdb9f68a8632",
+            "version": "KqlParameterItem/1.0",
+            "name": "Cluster",
+            "label": "Azure Local cluster",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.azurestackhci/clusters": true
+              },
+              "showDefault": false,
+              "componentIdOnly": true
+            }
+          },
+          {
+            "id": "5e38a9b8-2a30-4ab6-99d3-aa3ed25347dd",
+            "version": "KqlParameterItem/1.0",
+            "name": "Workspace",
+            "label": "Log Analytics workspace",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.operationalinsights/workspaces": true
+              },
+              "showDefault": false,
+              "componentIdOnly": true
+            }
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "Global parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "ba5b8abd-975e-49f1-96fc-c0729e84e8c5",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "overview",
+            "style": "link"
+          },
+          {
+            "id": "2d8c13fa-9663-493c-9af2-6d29a11584d2",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "CPU",
+            "subTarget": "cpu",
+            "style": "link"
+          },
+          {
+            "id": "389659eb-5f64-44b5-ab81-6e7b2950c6d9",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Memory",
+            "subTarget": "memory",
+            "style": "link"
+          },
+          {
+            "id": "cafa517a-1dd0-4c77-af85-e8eee64ba0bd",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Storage",
+            "subTarget": "storage",
+            "style": "link"
+          },
+          {
+            "id": "440fa048-fd4c-4f29-a614-76927b3abf4d",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Network",
+            "subTarget": "network",
+            "style": "link"
+          },
+          {
+            "id": "9b5631b3-87b4-4a3e-8549-eb252e65bf30",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Host balance",
+            "subTarget": "balance",
+            "style": "link"
+          },
+          {
+            "id": "7ffa76a3-b51c-4530-a0f1-23f2e426ad49",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "VM density",
+            "subTarget": "density",
+            "style": "link"
+          },
+          {
+            "id": "d86c9030-b0e0-4a32-ae1b-a28fbbac35d9",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Data quality",
+            "subTarget": "quality",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "Navigation tabs"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Operational overview\nCurrent cluster utilization based on the latest Azure Local SDDC management event."
+            },
+            "name": "Overview intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nlet Latest = NodeSnapshots | summarize arg_max(TimeGenerated, *) by Node;\nlet NodeCount = toscalar(Latest | summarize count());\nlet VmCount = toscalar(Latest | summarize sum(TotalVMs));\nlet AvgCpu = toscalar(Latest | summarize round(avg(CpuPct),1));\nlet AvgMemory = toscalar(Latest | summarize round(avg(MemoryPct),1));\nprint Nodes=NodeCount, VMs=VmCount, AvgCPUPercent=AvgCpu, AvgMemoryPercent=AvgMemory",
+              "size": 0,
+              "title": "Current cluster summary",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "tiles"
+            },
+            "name": "Overview tiles"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nNodeSnapshots | summarize arg_max(TimeGenerated, *) by Node | project Node, NodeHealth, CPUPercent=round(CpuPct,1), MemoryPercent=round(MemoryPct,1), TotalVMs, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, LogicalProcessors | order by Node asc",
+              "size": 0,
+              "title": "Current host utilization",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "Current node state"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      },
+      "name": "Overview group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## CPU utilization trends\nUse the trend and P95 views to identify sustained load and short-lived peaks."
+            },
+            "name": "CPU intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let ClusterNodes = materialize(\nEvent\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| project NodeKey=tolower(tostring(split(tostring(Nodes.m_name), \".\")[0]))\n| distinct NodeKey\n);\nPerf\n| where TimeGenerated {TimeRange:query}\n| where ObjectName =~ \"Processor\" and CounterName =~ \"% Processor Time\" and InstanceName =~ \"_Total\"\n| extend Node=tostring(split(Computer,\".\")[0]), NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize CPUPercent=avg(CounterValue) by Node, bin(TimeGenerated, 15m)\n| order by TimeGenerated asc",
+              "size": 0,
+              "title": "CPU utilization by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "linechart"
+            },
+            "name": "CPU trend"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let ClusterNodes = materialize(\nEvent\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| project NodeKey=tolower(tostring(split(tostring(Nodes.m_name), \".\")[0]))\n| distinct NodeKey\n);\nPerf\n| where TimeGenerated {TimeRange:query}\n| where ObjectName =~ \"Processor\" and CounterName =~ \"% Processor Time\" and InstanceName =~ \"_Total\"\n| extend Node=tostring(split(Computer,\".\")[0]), NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize AverageCPU=round(avg(CounterValue),1), PeakCPU=round(max(CounterValue),1), P95CPU=round(percentile(CounterValue,95),1) by Node\n| order by AverageCPU desc",
+              "size": 0,
+              "title": "CPU summary by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "CPU ranking"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "cpu"
+      },
+      "name": "CPU group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Memory consumption\nMemory percentage is calculated from used and total physical memory in Event ID 3000 snapshots."
+            },
+            "name": "Memory intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nNodeSnapshots\n| where TimeGenerated {TimeRange:query}\n| summarize MemoryPercent=avg(MemoryPct) by Node, bin(TimeGenerated, 15m)\n| order by TimeGenerated asc",
+              "size": 0,
+              "title": "Memory utilization by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "linechart"
+            },
+            "name": "Memory trend"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nNodeSnapshots\n| where TimeGenerated {TimeRange:query}\n| summarize AverageMemoryPercent=round(avg(MemoryPct),1), PeakMemoryPercent=round(max(MemoryPct),1), CurrentUsedGiB=round(arg_max(TimeGenerated,UsedMemoryBytes)/1024/1024/1024,1), TotalGiB=round(arg_max(TimeGenerated,TotalMemoryBytes)/1024/1024/1024,1) by Node\n| order by AverageMemoryPercent desc",
+              "size": 0,
+              "title": "Memory summary by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "Memory ranking"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "memory"
+      },
+      "name": "Memory group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Storage growth\nTracks used, free and total cluster volume capacity from Event ID 3002."
+            },
+            "name": "Storage intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Event\n| where TimeGenerated {TimeRange:query}\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3002\n| extend ClusterArmId=tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Hour=bin(TimeGenerated, 1h)\n| summarize arg_max(TimeGenerated, *) by ClusterArmId, Hour\n| extend Volumes=parse_json(RenderedDescription).VolumeList\n| mv-expand Volumes\n| extend Volume=tostring(Volumes.m_Label), TotalBytes=todouble(Volumes.m_Size), UsedBytes=todouble(Volumes.m_SizeUsed)\n| summarize UsedTiB=sum(UsedBytes)/1024/1024/1024/1024, TotalTiB=sum(TotalBytes)/1024/1024/1024/1024 by TimeGenerated=Hour\n| extend FreeTiB=TotalTiB-UsedTiB, UsedPercent=100.0*UsedTiB/TotalTiB\n| order by TimeGenerated asc",
+              "size": 0,
+              "title": "Cluster storage growth",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "linechart"
+            },
+            "name": "Storage growth"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Event\n| where TimeGenerated {TimeRange:query}\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3002\n| extend ClusterArmId=tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| summarize arg_max(TimeGenerated, *) by ClusterArmId\n| extend Volumes=parse_json(RenderedDescription).VolumeList\n| mv-expand Volumes\n| extend Volume=tostring(Volumes.m_Label), TotalBytes=todouble(Volumes.m_Size), UsedBytes=todouble(Volumes.m_SizeUsed), IOPS=todouble(Volumes.m_TotalIops), ThroughputBps=todouble(Volumes.m_TotalThroughput), LatencyMs=iff(todouble(Volumes.m_AverageLatency) < 0, 0.0, 1000.0*todouble(Volumes.m_AverageLatency))\n| project Volume, UsedTiB=round(UsedBytes/1024/1024/1024/1024,2), FreeTiB=round((TotalBytes-UsedBytes)/1024/1024/1024/1024,2), UsedPercent=round(100.0*UsedBytes/TotalBytes,1), IOPS=round(IOPS,0), ThroughputMiBps=round(ThroughputBps/1024/1024,1), LatencyMs=round(LatencyMs,2)\n| order by UsedPercent desc",
+              "size": 0,
+              "title": "Latest volume capacity and performance",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "Volume detail"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "storage"
+      },
+      "name": "Storage group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Network throughput\nNon-RDMA and RDMA counters are shown separately. Counter availability depends on the Insights DCR."
+            },
+            "name": "Network intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let ClusterNodes = materialize(\nEvent\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| project NodeKey=tolower(tostring(split(tostring(Nodes.m_name), \".\")[0]))\n| distinct NodeKey\n);\nPerf\n| where TimeGenerated {TimeRange:query}\n| where ObjectName in~ (\"Network Interface\",\"Network Adapter\")\n| where CounterName in~ (\"Bytes Total/sec\",\"Bytes Received/sec\",\"Bytes Sent/sec\")\n| extend Node=tostring(split(Computer,\".\")[0]), NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize BytesPerSecond=sum(CounterValue) by Node, ObjectName, CounterName, bin(TimeGenerated,15m)\n| extend ThroughputMbps=8.0*BytesPerSecond/1000000\n| extend Series=strcat(ObjectName, \" - \", CounterName)\n| project TimeGenerated, Node, Series, ThroughputMbps\n| order by TimeGenerated asc",
+              "size": 0,
+              "title": "Network throughput by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "linechart"
+            },
+            "name": "Network throughput"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let ClusterNodes = materialize(\nEvent\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| project NodeKey=tolower(tostring(split(tostring(Nodes.m_name), \".\")[0]))\n| distinct NodeKey\n);\nPerf\n| where TimeGenerated {TimeRange:query}\n| where ObjectName =~ \"RDMA Activity\"\n| extend Node=tostring(split(Computer,\".\")[0]), NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize RDMABytesPerSecond=sum(CounterValue) by Node, CounterName, bin(TimeGenerated,15m)\n| extend RDMATroughputGbps=8.0*RDMABytesPerSecond/1000000000\n| extend Series=strcat(\"RDMA - \", CounterName)\n| project TimeGenerated, Node, Series, RDMATroughputGbps\n| order by TimeGenerated asc",
+              "size": 0,
+              "title": "RDMA throughput by host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "linechart"
+            },
+            "name": "RDMA throughput"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "network"
+      },
+      "name": "Network group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Host utilization balance\nDeviation is calculated against the current cluster average. Thresholds are operational signals, not Microsoft support limits."
+            },
+            "name": "Balance intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nlet Latest=NodeSnapshots | summarize arg_max(TimeGenerated, *) by Node;\nLatest\n| summarize CPUStdDev=round(stdev(CpuPct),1), MemoryStdDev=round(stdev(MemoryPct),1), VMStdDev=round(stdev(todouble(TotalVMs)),1)\n| extend BalanceScore=round(100.0-min_of(100.0,CPUStdDev+MemoryStdDev+5.0*VMStdDev),0)\n| project BalanceScore, CPUStdDev, MemoryStdDev, VMStdDev",
+              "size": 0,
+              "title": "Cluster balance score",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "tiles"
+            },
+            "name": "Balance score"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nlet Latest=NodeSnapshots | summarize arg_max(TimeGenerated, *) by Node;\nlet CpuAvg=toscalar(Latest | summarize avg(CpuPct));\nlet MemAvg=toscalar(Latest | summarize avg(MemoryPct));\nlet VmAvg=toscalar(Latest | summarize avg(TotalVMs));\nLatest\n| extend CpuDeviation=round(CpuPct-CpuAvg,1), MemoryDeviation=round(MemoryPct-MemAvg,1), VmDeviation=round(TotalVMs-VmAvg,1)\n| extend BalanceRisk=case(abs(CpuDeviation)>=25 or abs(MemoryDeviation)>=25,\"High\",abs(CpuDeviation)>=15 or abs(MemoryDeviation)>=15,\"Medium\",\"Low\")\n| project Node, CPUPercent=round(CpuPct,1), MemoryPercent=round(MemoryPct,1), TotalVMs, CpuDeviation, MemoryDeviation, VmDeviation, BalanceRisk\n| order by BalanceRisk asc, CPUPercent desc",
+              "size": 0,
+              "title": "Host-level deviation",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "Host balance"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "balance"
+      },
+      "name": "Balance group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## VM density\nShows total and running VMs per host and per logical processor. Validate density against workload criticality, reserve capacity and failure-domain requirements."
+            },
+            "name": "Density intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "Event\n| where TimeGenerated {TimeRange:query}\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3003\n| extend ClusterArmId=tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| summarize arg_max(TimeGenerated, *) by ClusterArmId\n| extend D=parse_json(RenderedDescription)\n| project Running=toint(D.m_totalVmsRunning), Stopped=toint(D.m_totalVmsStopped), Failed=toint(D.m_totalVmsFailed), Other=toint(D.m_totalVmsUnknown)+toint(D.m_totalVmsPaused)+toint(D.m_totalVmsSuspended)+toint(D.m_totalVmsStarting)+toint(D.m_totalVmsSnapshotting)+toint(D.m_totalVmsSaving)+toint(D.m_totalVmsStopping)+toint(D.m_totalVmsPausing)+toint(D.m_totalVmsResuming)\n| evaluate narrow()\n| project State=Column, VMCount=tolong(Value)",
+              "size": 0,
+              "title": "Cluster VM states",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "piechart"
+            },
+            "name": "VM states"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let NodeSnapshots = Event\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| extend Node = tostring(Nodes.m_name),\n         CpuPct = todouble(Nodes.m_totalProcessorsUsedPercentage),\n         TotalMemoryBytes = todouble(Nodes.m_totalPhysicalMemoryInBytes),\n         UsedMemoryBytes = todouble(Nodes.m_usedPhysicalMemoryInBytes),\n         RunningVMs = toint(Nodes.m_vm.m_totalVmsRunning),\n         StoppedVMs = toint(Nodes.m_vm.m_totalVmsStopped),\n         FailedVMs = toint(Nodes.m_vm.m_totalVmsFailed),\n         LogicalProcessors = toint(Nodes.m_totalLogicalProcessors),\n         NodeHealth = case(toint(Nodes.m_statusCategory) == 0, \"Healthy\", toint(Nodes.m_statusCategory) == 1, \"Warning\", toint(Nodes.m_statusCategory) == 2, \"Unhealthy\", \"Other\")\n| extend MemoryPct = iff(TotalMemoryBytes > 0, 100.0 * UsedMemoryBytes / TotalMemoryBytes, real(null)),\n         OtherVMs = toint(Nodes.m_vm.m_totalVmsUnknown)\n         + toint(Nodes.m_vm.m_totalVmsPaused)\n         + toint(Nodes.m_vm.m_totalVmsSuspended)\n         + toint(Nodes.m_vm.m_totalVmsStarting)\n         + toint(Nodes.m_vm.m_totalVmsSnapshotting)\n         + toint(Nodes.m_vm.m_totalVmsSaving)\n         + toint(Nodes.m_vm.m_totalVmsStopping)\n         + toint(Nodes.m_vm.m_totalVmsPausing)\n         + toint(Nodes.m_vm.m_totalVmsResuming),\n         TotalVMs = RunningVMs + StoppedVMs + FailedVMs + OtherVMs\n| project TimeGenerated, Node, CpuPct, MemoryPct, TotalMemoryBytes, UsedMemoryBytes, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, TotalVMs, LogicalProcessors, NodeHealth;\nNodeSnapshots\n| summarize arg_max(TimeGenerated, *) by Node\n| extend VMsPerLogicalProcessor=round(todouble(TotalVMs)/LogicalProcessors,2), RunningVMsPerLogicalProcessor=round(todouble(RunningVMs)/LogicalProcessors,2)\n| project Node, NodeHealth, TotalVMs, RunningVMs, StoppedVMs, FailedVMs, OtherVMs, LogicalProcessors, VMsPerLogicalProcessor, RunningVMsPerLogicalProcessor\n| order by TotalVMs desc",
+              "size": 0,
+              "title": "VM density per host",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "VM density"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "density"
+      },
+      "name": "Density group"
+    },
+    {
+      "type": 12,
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 1,
+            "content": {
+              "json": "## Data quality and prerequisites\nUse this tab first when a visualization is empty. Azure Local Insights must be enabled, the Azure Monitor Agent must be healthy, and the Insights DCR must collect the required events and performance counters."
+            },
+            "name": "Quality intro"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let ClusterNodes = materialize(\nEvent\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\" and EventID == 3000\n| extend ClusterArmId = tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| extend Nodes = parse_json(RenderedDescription).m_servers\n| mv-expand Nodes\n| project NodeKey=tolower(tostring(split(tostring(Nodes.m_name), \".\")[0]))\n| distinct NodeKey\n);\nunion isfuzzy=true\n(Perf\n| where TimeGenerated {TimeRange:query}\n| extend NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize LastRecord=max(TimeGenerated), Records=count()\n| extend DataSource=\"Perf\"),\n(Event\n| where TimeGenerated {TimeRange:query}\n| where EventLog =~ \"Microsoft-Windows-SDDC-Management/Operational\"\n| extend ClusterArmId=tostring(parse_xml(EventData).DataItem.UserData.EventData[\"ArmId\"])\n| where ClusterArmId =~ \"{Cluster}\"\n| summarize LastRecord=max(TimeGenerated), Records=count()\n| extend DataSource=\"Azure Local SDDC Events\"),\n(Event\n| where TimeGenerated {TimeRange:query}\n| where EventLog =~ \"Microsoft-Windows-Health/Operational\"\n| extend NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize LastRecord=max(TimeGenerated), Records=count()\n| extend DataSource=\"Azure Local Health Events\"),\n(Heartbeat\n| where TimeGenerated {TimeRange:query}\n| extend NodeKey=tolower(tostring(split(Computer,\".\")[0]))\n| join kind=inner (ClusterNodes) on NodeKey\n| summarize LastRecord=max(TimeGenerated), Records=count()\n| extend DataSource=\"Heartbeat\")\n| extend MinutesSinceLastRecord=datetime_diff(\"minute\",now(),LastRecord)\n| project DataSource, LastRecord, MinutesSinceLastRecord, Records\n| order by DataSource asc",
+              "size": 0,
+              "title": "Telemetry freshness",
+              "noDataMessage": "No data returned. Verify Azure Local Insights and the required DCR counters are enabled.",
+              "timeContextFromParameter": "TimeRange",
+              "showRefreshButton": true,
+              "showExportToExcel": true,
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table"
+            },
+            "name": "Data freshness"
+          },
+          {
+            "type": 1,
+            "content": {
+              "json": "### Required telemetry\n- `Microsoft-Windows-SDDC-Management/Operational` events 3000, 3002 and 3003\n- `Microsoft-Windows-Health/Operational` events\n- Processor, memory, network interface or adapter, and RDMA performance counters\n- Heartbeat records from Azure Monitor Agent"
+            },
+            "name": "Requirements"
+          }
+        ]
+      },
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "quality"
+      },
+      "name": "Quality group"
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [
+    "Azure Monitor"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

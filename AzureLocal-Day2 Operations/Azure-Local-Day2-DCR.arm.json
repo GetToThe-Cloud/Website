@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "dcr-azurelocal-day2-operations",
+      "metadata": {
+        "description": "Name of the supplemental Azure Local Day 2 Operations data collection rule."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "logAnalyticsWorkspaceResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics workspace used by Azure Local Insights and the workbook."
+      }
+    },
+    "performanceSamplingFrequencyInSeconds": {
+      "type": "int",
+      "defaultValue": 60,
+      "minValue": 10,
+      "maxValue": 300
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "kind": "Windows",
+      "properties": {
+        "description": "Supplemental performance counters for the GetToThe.Cloud Azure Local Day 2 Operations workbook. Keep the Microsoft-managed Azure Local Insights DCR enabled; this rule intentionally avoids its event logs and baseline counters.",
+        "dataSources": {
+          "performanceCounters": [
+            {
+              "name": "AzureLocalDay2Performance",
+              "streams": [
+                "Microsoft-Perf"
+              ],
+              "samplingFrequencyInSeconds": "[parameters('performanceSamplingFrequencyInSeconds')]",
+              "counterSpecifiers": [
+                "\\Memory\\% Committed Bytes In Use",
+                "\\Network Interface(*)\\Bytes Received/sec",
+                "\\Network Interface(*)\\Bytes Sent/sec",
+                "\\Network Adapter(*)\\Bytes Total/sec",
+                "\\Network Adapter(*)\\Bytes Received/sec",
+                "\\Network Adapter(*)\\Bytes Sent/sec"
+              ]
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "day2Workspace",
+              "workspaceResourceId": "[parameters('logAnalyticsWorkspaceResourceId')]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Microsoft-Perf"
+            ],
+            "destinations": [
+              "day2Workspace"
+            ],
+            "transformKql": "source"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "dataCollectionRuleId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+    }
+  }
+}
