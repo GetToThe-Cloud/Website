@@ -1,0 +1,90 @@
+{
+  "properties": {
+    "displayName": "Virtual machines en scale sets moeten encryption at host aan hebben staan",
+    "policyType": "Custom",
+    "mode": "Indexed",
+    "description": "Weigert (of audit) het aanmaken of wijzigen van VM's en VM scale sets waarbij securityProfile.encryptionAtHost niet op true staat. Bestaande resources worden hiermee niet geremedieerd - encryption at host vereist deallocatie en kan daarom niet via DeployIfNotExists worden afgedwongen. Gebruik hiervoor het Enable-EncryptionAtHost.ps1 script.",
+    "metadata": {
+      "version": "1.0.0",
+      "category": "Compute"
+    },
+    "parameters": {
+      "effect": {
+        "type": "String",
+        "metadata": {
+          "displayName": "Effect",
+          "description": "Audit om eerst te meten, Deny om af te dwingen. Begin met Audit."
+        },
+        "allowedValues": [
+          "Audit",
+          "Deny",
+          "Disabled"
+        ],
+        "defaultValue": "Audit"
+      },
+      "excludedVmSizes": {
+        "type": "Array",
+        "metadata": {
+          "displayName": "Uitgezonderde VM-sizes",
+          "description": "VM-sizes die encryption at host niet ondersteunen (legacy sizes). Deze worden niet geweigerd. Vul aan op basis van de pre-flight rapportage."
+        },
+        "defaultValue": [
+          "Basic_A0",
+          "Basic_A1",
+          "Basic_A2",
+          "Basic_A3",
+          "Basic_A4",
+          "Standard_A0",
+          "Standard_A1",
+          "Standard_A2",
+          "Standard_A3",
+          "Standard_A4",
+          "Standard_A5",
+          "Standard_A6",
+          "Standard_A7"
+        ]
+      }
+    },
+    "policyRule": {
+      "if": {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "field": "type",
+                "equals": "Microsoft.Compute/virtualMachines"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachines/hardwareProfile.vmSize",
+                "notIn": "[parameters('excludedVmSizes')]"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachines/securityProfile.encryptionAtHost",
+                "notEquals": "true"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "field": "type",
+                "equals": "Microsoft.Compute/virtualMachineScaleSets"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachineScaleSets/sku.name",
+                "notIn": "[parameters('excludedVmSizes')]"
+              },
+              {
+                "field": "Microsoft.Compute/virtualMachineScaleSets/virtualMachineProfile.securityProfile.encryptionAtHost",
+                "notEquals": "true"
+              }
+            ]
+          }
+        ]
+      },
+      "then": {
+        "effect": "[parameters('effect')]"
+      }
+    }
+  }
+}
