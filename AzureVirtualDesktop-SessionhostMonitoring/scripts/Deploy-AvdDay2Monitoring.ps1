@@ -32,6 +32,10 @@
 .PARAMETER ImportWorkbook
     Also deploy the workbook as a shared workbook in the monitoring resource group.
 
+.PARAMETER UseArmTemplate
+    Deploy arm/main.json instead of bicep/main.bicep. The script does this automatically
+    when the Bicep CLI is not installed, because Az PowerShell compiles Bicep locally.
+
 .PARAMETER WhatIf
     Runs the deployment in what-if mode and changes nothing.
 
@@ -60,15 +64,51 @@ param(
     [string[]]$ActionGroupIds = @(),
     [int]$InputDelayThresholdMs = 200,
     [switch]$ImportWorkbook,
-    [string]$WorkbookDisplayName = 'AVD Sessionhosts Monitoring 2.0'
+    [string]$WorkbookDisplayName = 'AVD Sessionhosts Monitoring 2.0',
+    [switch]$UseArmTemplate
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = Split-Path -Parent $PSScriptRoot
-$templateFile = Join-Path $root 'bicep/main.bicep'
+$bicepTemplateFile = Join-Path $root 'bicep/main.bicep'
+$armTemplateFile = Join-Path $root 'arm/main.json'
 $workbookFile = Join-Path $root 'workbook/avd-sessionhosts-monitoring-2.0.workbook.json'
+
+function Test-BicepCli {
+    <#
+        Az PowerShell compiles a .bicep file locally, so it needs the Bicep CLI on the PATH
+        or in the Azure CLI location (~/.azure/bin). Returns $true when it can be found.
+    #>
+    if (Get-Command -Name 'bicep' -CommandType Application -ErrorAction SilentlyContinue) {
+        return $true
+    }
+
+    $azureCliBicep = Join-Path $HOME '.azure/bin/bicep.exe'
+    if (Test-Path -Path $azureCliBicep) {
+        return $true
+    }
+
+    $azureCliBicepLinux = Join-Path $HOME '.azure/bin/bicep'
+    return (Test-Path -Path $azureCliBicepLinux)
+}
+
+if ($UseArmTemplate) {
+    $templateFile = $armTemplateFile
+}
+elseif (Test-BicepCli) {
+    $templateFile = $bicepTemplateFile
+}
+else {
+    Write-Warning 'Bicep CLI not found. Falling back to the compiled ARM template in arm/main.json.'
+    Write-Warning 'To use the Bicep template instead, install the CLI with: az bicep install, or winget install -e --id Microsoft.Bicep'
+    $templateFile = $armTemplateFile
+}
+
+if (-not (Test-Path -Path $templateFile)) {
+    throw "Template not found: $templateFile"
+}
 
 foreach ($module in 'Az.Accounts', 'Az.Resources', 'Az.Compute') {
     if (-not (Get-Module -ListAvailable -Name $module)) {
