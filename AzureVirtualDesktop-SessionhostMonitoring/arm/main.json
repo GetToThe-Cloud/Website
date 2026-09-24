@@ -1,0 +1,532 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "10359720901665831965"
+    },
+    "description": "AVD Sessionhosts Monitoring 2.0 - deploys the supplemental Data Collection Rule, associates it with the session hosts and optionally creates the log search alerts."
+  },
+  "parameters": {
+    "monitoringResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group that holds the monitoring resources (Data Collection Rule, alerts)."
+      }
+    },
+    "sessionHostResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group that holds the session host virtual machines."
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region for the Data Collection Rule. Must match the region of the session hosts."
+      }
+    },
+    "workspaceResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics workspace used by AVD Insights."
+      }
+    },
+    "sessionHostNames": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Names of the session host virtual machines to associate with the Data Collection Rule. Leave empty to deploy the rule only."
+      }
+    },
+    "dcrName": {
+      "type": "string",
+      "defaultValue": "[format('dcr-avd-day2-{0}', parameters('location'))]",
+      "metadata": {
+        "description": "Name of the Data Collection Rule. The default follows the dcr-avd-day2-<region> convention used in the blog post."
+      }
+    },
+    "samplingFrequencyInSeconds": {
+      "type": "int",
+      "defaultValue": 60,
+      "metadata": {
+        "description": "Sampling interval in seconds for the supplemental performance counters."
+      }
+    },
+    "deployAlerts": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true to deploy the two log search alerts."
+      }
+    },
+    "actionGroupIds": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Resource IDs of the action groups notified by the alerts."
+      }
+    },
+    "inputDelayThresholdMs": {
+      "type": "int",
+      "defaultValue": 200,
+      "metadata": {
+        "description": "Threshold in milliseconds for the P95 user input delay alert."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {
+        "solution": "avd-sessionhosts-monitoring-2.0"
+      },
+      "metadata": {
+        "description": "Tags applied to all deployed resources."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('deploy-{0}', parameters('dcrName'))]",
+      "resourceGroup": "[parameters('monitoringResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "dcrName": {
+            "value": "[parameters('dcrName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceResourceId": {
+            "value": "[parameters('workspaceResourceId')]"
+          },
+          "samplingFrequencyInSeconds": {
+            "value": "[parameters('samplingFrequencyInSeconds')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.47.16.16243",
+              "templateHash": "17496890203880047364"
+            },
+            "description": "Supplemental Data Collection Rule for AVD Sessionhosts Monitoring 2.0. It does not repeat anything the Microsoft managed microsoft-avdi-<region> rule already collects."
+          },
+          "parameters": {
+            "dcrName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Data Collection Rule."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region. Must match the region of the session hosts."
+              }
+            },
+            "workspaceResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics workspace that receives the data."
+              }
+            },
+            "samplingFrequencyInSeconds": {
+              "type": "int",
+              "defaultValue": 60,
+              "minValue": 15,
+              "maxValue": 300,
+              "metadata": {
+                "description": "Sampling interval in seconds for the supplemental performance counters."
+              }
+            },
+            "counterSpecifiers": {
+              "type": "array",
+              "defaultValue": [
+                "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Server Resources",
+                "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Network Resources",
+                "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Client Resources",
+                "\\RemoteFX Graphics(*)\\Output Frames/Second",
+                "\\Network Interface(*)\\Bytes Total/sec",
+                "\\System\\Processor Queue Length",
+                "\\Memory\\Committed Bytes"
+              ],
+              "metadata": {
+                "description": "Performance counters collected on top of the AVD Insights DCR."
+              }
+            },
+            "xPathQueries": {
+              "type": "array",
+              "defaultValue": [
+                "Microsoft-Windows-User Profile Service/Operational!*[System[(Level=1 or Level=2 or Level=3)]]"
+              ],
+              "metadata": {
+                "description": "XPath queries for the supplemental Windows event logs."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags applied to the Data Collection Rule."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2022-06-01",
+              "name": "[parameters('dcrName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "kind": "Windows",
+              "properties": {
+                "description": "AVD Sessionhosts Monitoring 2.0 supplemental counters and logs",
+                "dataSources": {
+                  "performanceCounters": [
+                    {
+                      "name": "avdDay2Perf",
+                      "streams": [
+                        "Microsoft-Perf"
+                      ],
+                      "samplingFrequencyInSeconds": "[parameters('samplingFrequencyInSeconds')]",
+                      "counterSpecifiers": "[parameters('counterSpecifiers')]"
+                    }
+                  ],
+                  "windowsEventLogs": [
+                    {
+                      "name": "avdDay2Events",
+                      "streams": [
+                        "Microsoft-Event"
+                      ],
+                      "xPathQueries": "[parameters('xPathQueries')]"
+                    }
+                  ]
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "logAnalyticsWorkspace",
+                      "workspaceResourceId": "[parameters('workspaceResourceId')]"
+                    }
+                  ]
+                },
+                "dataFlows": [
+                  {
+                    "streams": [
+                      "Microsoft-Perf",
+                      "Microsoft-Event"
+                    ],
+                    "destinations": [
+                      "logAnalyticsWorkspace"
+                    ]
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "dataCollectionRuleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Data Collection Rule."
+              },
+              "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+            },
+            "dataCollectionRuleName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Data Collection Rule."
+              },
+              "value": "[parameters('dcrName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "copy": {
+        "name": "associations",
+        "count": "[length(parameters('sessionHostNames'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('assoc-{0}', uniqueString(parameters('sessionHostNames')[copyIndex()]))]",
+      "resourceGroup": "[parameters('sessionHostResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "virtualMachineName": {
+            "value": "[parameters('sessionHostNames')[copyIndex()]]"
+          },
+          "dataCollectionRuleId": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('monitoringResourceGroupName')), 'Microsoft.Resources/deployments', format('deploy-{0}', parameters('dcrName'))), '2025-04-01').outputs.dataCollectionRuleId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.47.16.16243",
+              "templateHash": "7935001705151997965"
+            },
+            "description": "Associates the Day 2 Data Collection Rule with a single session host virtual machine."
+          },
+          "parameters": {
+            "virtualMachineName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the session host virtual machine in this resource group."
+              }
+            },
+            "dataCollectionRuleId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Data Collection Rule to associate."
+              }
+            },
+            "associationName": {
+              "type": "string",
+              "defaultValue": "dcr-avd-day2",
+              "metadata": {
+                "description": "Name of the association as it appears on the virtual machine."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/dataCollectionRuleAssociations",
+              "apiVersion": "2022-06-01",
+              "scope": "[resourceId('Microsoft.Compute/virtualMachines', parameters('virtualMachineName'))]",
+              "name": "[parameters('associationName')]",
+              "properties": {
+                "description": "AVD Sessionhosts Monitoring 2.0 supplemental DCR",
+                "dataCollectionRuleId": "[parameters('dataCollectionRuleId')]"
+              }
+            }
+          ],
+          "outputs": {
+            "associationId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the association."
+              },
+              "value": "[extensionResourceId(resourceId('Microsoft.Compute/virtualMachines', parameters('virtualMachineName')), 'Microsoft.Insights/dataCollectionRuleAssociations', parameters('associationName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('monitoringResourceGroupName')), 'Microsoft.Resources/deployments', format('deploy-{0}', parameters('dcrName')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployAlerts')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-avd-day2-alerts",
+      "resourceGroup": "[parameters('monitoringResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workspaceResourceId": {
+            "value": "[parameters('workspaceResourceId')]"
+          },
+          "actionGroupIds": {
+            "value": "[parameters('actionGroupIds')]"
+          },
+          "inputDelayThresholdMs": {
+            "value": "[parameters('inputDelayThresholdMs')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.47.16.16243",
+              "templateHash": "17036488745187451862"
+            },
+            "description": "Optional log search alerts for AVD Sessionhosts Monitoring 2.0: unhealthy session hosts and high P95 input delay."
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region for the alert rules. Use the region of the Log Analytics workspace."
+              }
+            },
+            "workspaceResourceId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the Log Analytics workspace the alerts query."
+              }
+            },
+            "actionGroupIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Resource IDs of the action groups that are notified. Leave empty to create the rules without notifications."
+              }
+            },
+            "inputDelayThresholdMs": {
+              "type": "int",
+              "defaultValue": 200,
+              "metadata": {
+                "description": "Threshold in milliseconds for the P95 user input delay alert."
+              }
+            },
+            "namePrefix": {
+              "type": "string",
+              "defaultValue": "avd-day2",
+              "metadata": {
+                "description": "Prefix for the alert rule names."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Tags applied to the alert rules."
+              }
+            }
+          },
+          "variables": {
+            "unhealthyQuery": "WVDAgentHealthStatus\n| where TimeGenerated > ago(15m)\n| summarize arg_max(TimeGenerated, Status) by SessionHostName\n| where Status != \"Available\"\n",
+            "inputDelayQuery": "Perf\n| where ObjectName == \"User Input Delay per Session\" and CounterName == \"Max Input Delay\"\n| where InstanceName !in (\"Max\", \"Average\")\n| summarize P95 = percentile(CounterValue, 95) by Computer\n| where P95 > THRESHOLD\n"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-unhealthy-session-hosts', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "AVD - session host not available for 15 minutes",
+                "description": "Fires when the AVD agent on a session host reports a status other than Available.",
+                "severity": 2,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceResourceId')]"
+                ],
+                "evaluationFrequency": "PT15M",
+                "windowSize": "PT15M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[variables('unhealthyQuery')]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 1,
+                        "minFailingPeriodsToAlert": 1
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": "[parameters('actionGroupIds')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/scheduledQueryRules",
+              "apiVersion": "2023-03-15-preview",
+              "name": "[format('{0}-high-input-delay', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "displayName": "AVD - P95 input delay above threshold",
+                "description": "Fires when the P95 user input delay on a session host stays above the threshold over a 30 minute window.",
+                "severity": 3,
+                "enabled": true,
+                "scopes": [
+                  "[parameters('workspaceResourceId')]"
+                ],
+                "evaluationFrequency": "PT15M",
+                "windowSize": "PT30M",
+                "criteria": {
+                  "allOf": [
+                    {
+                      "query": "[replace(variables('inputDelayQuery'), 'THRESHOLD', string(parameters('inputDelayThresholdMs')))]",
+                      "timeAggregation": "Count",
+                      "operator": "GreaterThan",
+                      "threshold": 0,
+                      "failingPeriods": {
+                        "numberOfEvaluationPeriods": 2,
+                        "minFailingPeriodsToAlert": 2
+                      }
+                    }
+                  ]
+                },
+                "autoMitigate": true,
+                "actions": {
+                  "actionGroups": "[parameters('actionGroupIds')]"
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "alertRuleIds": {
+              "type": "array",
+              "metadata": {
+                "description": "Resource IDs of the created alert rules."
+              },
+              "value": [
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-unhealthy-session-hosts', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.Insights/scheduledQueryRules', format('{0}-high-input-delay', parameters('namePrefix')))]"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "dataCollectionRuleId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the deployed Data Collection Rule."
+      },
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('monitoringResourceGroupName')), 'Microsoft.Resources/deployments', format('deploy-{0}', parameters('dcrName'))), '2025-04-01').outputs.dataCollectionRuleId.value]"
+    },
+    "associatedSessionHosts": {
+      "type": "int",
+      "metadata": {
+        "description": "Number of session hosts associated with the Data Collection Rule."
+      },
+      "value": "[length(parameters('sessionHostNames'))]"
+    }
+  }
+}

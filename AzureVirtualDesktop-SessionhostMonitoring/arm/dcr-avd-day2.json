@@ -1,0 +1,141 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.47.16.16243",
+      "templateHash": "17496890203880047364"
+    },
+    "description": "Supplemental Data Collection Rule for AVD Sessionhosts Monitoring 2.0. It does not repeat anything the Microsoft managed microsoft-avdi-<region> rule already collects."
+  },
+  "parameters": {
+    "dcrName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Data Collection Rule."
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure region. Must match the region of the session hosts."
+      }
+    },
+    "workspaceResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Log Analytics workspace that receives the data."
+      }
+    },
+    "samplingFrequencyInSeconds": {
+      "type": "int",
+      "defaultValue": 60,
+      "minValue": 15,
+      "maxValue": 300,
+      "metadata": {
+        "description": "Sampling interval in seconds for the supplemental performance counters."
+      }
+    },
+    "counterSpecifiers": {
+      "type": "array",
+      "defaultValue": [
+        "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Server Resources",
+        "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Network Resources",
+        "\\RemoteFX Graphics(*)\\Frames Skipped/Second - Insufficient Client Resources",
+        "\\RemoteFX Graphics(*)\\Output Frames/Second",
+        "\\Network Interface(*)\\Bytes Total/sec",
+        "\\System\\Processor Queue Length",
+        "\\Memory\\Committed Bytes"
+      ],
+      "metadata": {
+        "description": "Performance counters collected on top of the AVD Insights DCR."
+      }
+    },
+    "xPathQueries": {
+      "type": "array",
+      "defaultValue": [
+        "Microsoft-Windows-User Profile Service/Operational!*[System[(Level=1 or Level=2 or Level=3)]]"
+      ],
+      "metadata": {
+        "description": "XPath queries for the supplemental Windows event logs."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Tags applied to the Data Collection Rule."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dcrName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "Windows",
+      "properties": {
+        "description": "AVD Sessionhosts Monitoring 2.0 supplemental counters and logs",
+        "dataSources": {
+          "performanceCounters": [
+            {
+              "name": "avdDay2Perf",
+              "streams": [
+                "Microsoft-Perf"
+              ],
+              "samplingFrequencyInSeconds": "[parameters('samplingFrequencyInSeconds')]",
+              "counterSpecifiers": "[parameters('counterSpecifiers')]"
+            }
+          ],
+          "windowsEventLogs": [
+            {
+              "name": "avdDay2Events",
+              "streams": [
+                "Microsoft-Event"
+              ],
+              "xPathQueries": "[parameters('xPathQueries')]"
+            }
+          ]
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "logAnalyticsWorkspace",
+              "workspaceResourceId": "[parameters('workspaceResourceId')]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Microsoft-Perf",
+              "Microsoft-Event"
+            ],
+            "destinations": [
+              "logAnalyticsWorkspace"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "dataCollectionRuleId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the Data Collection Rule."
+      },
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dcrName'))]"
+    },
+    "dataCollectionRuleName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Data Collection Rule."
+      },
+      "value": "[parameters('dcrName')]"
+    }
+  }
+}

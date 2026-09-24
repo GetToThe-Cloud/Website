@@ -1,0 +1,278 @@
+// AVD Sessionhosts Monitoring 2.0 - the queries behind every tab.
+// The workbook passes the selected session hosts in the 'hosts' variable.
+// To run a query outside the workbook, replace {SessionHosts} with '*' or with a
+// comma separated list of short host names, for example 'avd-weu-01','avd-weu-02'.
+
+// ------------------------------------------------------------------------
+// Overview - summary tiles
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+let health = WVDAgentHealthStatus
+| extend Host = shortName(SessionHostName)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize arg_max(TimeGenerated, Status) by Host;
+let sessions = Perf
+| where ObjectName == "Terminal Services" and CounterName == "Active Sessions"
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 15m)
+| summarize Sessions = max(Sessions) by bin_at(TimeGenerated, 15m, now())
+| top 1 by TimeGenerated desc;
+let delay = Perf
+| where ObjectName == "User Input Delay per Session" and CounterName == "Max Input Delay"
+| where InstanceName !in ("Max", "Average")
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize P95 = percentile(CounterValue, 95);
+let connections = WVDConnections
+| summarize States = make_set(State) by CorrelationId
+| summarize Attempts = count(), Succeeded = countif(set_has_element(States, "Connected"));
+union
+(health | summarize Metric = "Session hosts", Value = todouble(count()), Unit = "hosts"),
+(health | summarize Metric = "Available", Value = todouble(countif(Status == "Available")), Unit = "hosts"),
+(health | summarize Metric = "Need attention", Value = todouble(countif(Status != "Available")), Unit = "hosts"),
+(sessions | summarize Metric = "Active sessions", Value = todouble(max(Sessions)), Unit = "sessions"),
+(delay | summarize Metric = "Input delay P95", Value = round(max(P95)), Unit = "ms"),
+(connections | summarize Metric = "Connection success", Value = round(100.0 * max(Succeeded) / max(Attempts), 1), Unit = "%")
+
+
+// ------------------------------------------------------------------------
+// Overview - session host table
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+let health = WVDAgentHealthStatus
+| extend Host = shortName(SessionHostName)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize arg_max(TimeGenerated, Status, AgentVersion, SessionHostHealthCheckResult) by Host;
+let perf = Perf
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize
+    CpuAvg = avgif(CounterValue, ObjectName == "Processor Information" and CounterName == "% Processor Time" and InstanceName == "_Total"),
+    Sessions = maxif(CounterValue, ObjectName == "Terminal Services" and CounterName == "Active Sessions"),
+    MemoryUsedPct = avgif(CounterValue, ObjectName == "Memory" and CounterName =~ "% Committed Bytes In Use")
+    by Host;
+let delay = Perf
+| where ObjectName == "User Input Delay per Session" and CounterName == "Max Input Delay"
+| where InstanceName !in ("Max", "Average")
+| extend Host = shortName(Computer)
+| summarize InputDelayP95 = percentile(CounterValue, 95) by Host;
+health
+| join kind=leftouter perf on Host
+| join kind=leftouter delay on Host
+| extend FailedChecks = tostring(array_length(parse_json(SessionHostHealthCheckResult)))
+| project
+    ["Session host"] = Host,
+    Status,
+    Sessions = tolong(Sessions),
+    ["CPU avg %"] = round(CpuAvg, 1),
+    ["Memory used %"] = round(MemoryUsedPct, 1),
+    ["Input delay P95 (ms)"] = round(InputDelayP95),
+    ["Agent version"] = AgentVersion,
+    ["Last report"] = TimeGenerated
+| order by Status asc, ["Input delay P95 (ms)"] desc
+
+
+// ------------------------------------------------------------------------
+// Session host health - unhealthy reports per hour
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+WVDAgentHealthStatus
+| extend Host = shortName(SessionHostName)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize Unhealthy = countif(Status != "Available"), Reports = count() by Host, bin(TimeGenerated, 1h)
+| extend UnhealthyPct = round(100.0 * Unhealthy / Reports, 1)
+| project TimeGenerated, Host, UnhealthyPct
+| evaluate pivot(Host, max(UnhealthyPct))
+| order by TimeGenerated asc
+
+
+// ------------------------------------------------------------------------
+// Session host health - failed health checks
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+WVDAgentHealthStatus
+| extend Host = shortName(SessionHostName)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| where Status != "Available"
+| mv-expand Check = parse_json(SessionHostHealthCheckResult)
+| extend HealthCheck = tostring(Check.HealthCheckName), Result = tostring(Check.HealthCheckResult)
+| where Result != "HealthCheckSucceeded"
+| summarize Failures = count(), LastSeen = max(TimeGenerated) by ["Session host"] = Host, HealthCheck, Result
+| order by LastSeen desc
+
+
+// ------------------------------------------------------------------------
+// Capacity and density - cost per session
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+let cpu = Perf
+| where ObjectName == "Processor Information" and CounterName == "% Processor Time" and InstanceName == "_Total"
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize CpuP95 = percentile(CounterValue, 95) by Host, bin(TimeGenerated, 1h);
+let sessions = Perf
+| where ObjectName == "Terminal Services" and CounterName == "Active Sessions"
+| extend Host = shortName(Computer)
+| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 1h);
+cpu
+| join kind=inner sessions on Host, TimeGenerated
+| where Sessions > 0
+| extend CpuPerSession = CpuP95 / Sessions
+| summarize
+    ["CPU per session %"] = round(avg(CpuPerSession), 1),
+    ["Peak sessions"] = tolong(max(Sessions)),
+    ["Peak CPU P95 %"] = round(max(CpuP95), 1)
+    by ["Session host"] = Host
+| order by ["CPU per session %"] desc
+
+
+// ------------------------------------------------------------------------
+// Capacity and density - active sessions
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+Perf
+| where ObjectName == "Terminal Services" and CounterName == "Active Sessions"
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 15m)
+| summarize ["Active sessions"] = sum(Sessions) by TimeGenerated
+| order by TimeGenerated asc
+
+
+// ------------------------------------------------------------------------
+// User experience - input delay over time
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+Perf
+| where ObjectName == "User Input Delay per Session" and CounterName == "Max Input Delay"
+| where InstanceName !in ("Max", "Average")
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize P50 = percentile(CounterValue, 50), P95 = percentile(CounterValue, 95) by bin(TimeGenerated, 15m)
+| order by TimeGenerated asc
+
+
+// ------------------------------------------------------------------------
+// User experience - input delay per session host
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+Perf
+| where ObjectName == "User Input Delay per Session" and CounterName == "Max Input Delay"
+| where InstanceName !in ("Max", "Average")
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize
+    ["Input delay P50 (ms)"] = round(percentile(CounterValue, 50)),
+    ["Input delay P95 (ms)"] = round(percentile(CounterValue, 95)),
+    ["Input delay max (ms)"] = round(max(CounterValue))
+    by ["Session host"] = Host
+| order by ["Input delay P95 (ms)"] desc
+
+
+// ------------------------------------------------------------------------
+// User experience - round trip time and bandwidth
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+WVDConnectionNetworkData
+| join kind=inner (
+    WVDConnections
+    | where State == "Connected"
+    | project CorrelationId, SessionHostName, TransportType
+  ) on CorrelationId
+| extend Host = shortName(SessionHostName)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize
+    ["RTT P50 (ms)"] = round(percentile(EstRoundTripTimeInMs, 50)),
+    ["RTT P95 (ms)"] = round(percentile(EstRoundTripTimeInMs, 95)),
+    ["Bandwidth P50 (KBps)"] = round(percentile(EstAvailableBandwidthKBps, 50)),
+    Measurements = count()
+    by ["Session host"] = Host, TransportType
+| order by ["RTT P95 (ms)"] desc
+
+
+// ------------------------------------------------------------------------
+// Connections - success per session host
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+WVDConnections
+| summarize States = make_set(State), SessionHostName = take_any(SessionHostName) by CorrelationId
+| extend Succeeded = set_has_element(States, "Connected")
+| extend Host = iff(isempty(SessionHostName), "(no host assigned)", shortName(SessionHostName))
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts) or Host == "(no host assigned)"
+| summarize Attempts = count(), Failed = countif(not(Succeeded)) by ["Session host"] = Host
+| extend ["Success rate %"] = round(100.0 * (Attempts - Failed) / Attempts, 1)
+| order by ["Success rate %"] asc
+
+
+// ------------------------------------------------------------------------
+// Connections - errors
+// ------------------------------------------------------------------------
+WVDErrors
+| summarize Errors = count(), LastSeen = max(TimeGenerated), Example = take_any(Message)
+    by CodeSymbolic, Source, ServiceError
+| order by Errors desc
+
+
+// ------------------------------------------------------------------------
+// FSLogix - errors and warnings
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+Event
+| where EventLog startswith "Microsoft-FSLogix-Apps"
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| where EventLevelName in ("Error", "Warning")
+| summarize Events = count(), LastSeen = max(TimeGenerated), Example = take_any(RenderedDescription)
+    by ["Session host"] = Host, EventLog, EventID, EventLevelName
+| order by Events desc
+
+
+// ------------------------------------------------------------------------
+// Data quality - sources and freshness
+// ------------------------------------------------------------------------
+union withsource=Table Perf, Event, WVDAgentHealthStatus, WVDConnections, WVDConnectionNetworkData
+| extend Source = coalesce(ObjectName, EventLog, Table)
+| summarize Records = count(), LastRecord = max(TimeGenerated) by Table, Source, CounterName
+| extend ["Minutes old"] = datetime_diff("minute", now(), LastRecord)
+| order by Table asc, Source asc
+
+
+// ------------------------------------------------------------------------
+// Data quality - heartbeat
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+Heartbeat
+| extend Host = shortName(Computer)
+| where array_length(hosts) == 0 or "*" in (hosts) or Host in (hosts)
+| summarize LastHeartbeat = max(TimeGenerated), Rules = make_set(Category) by ["Session host"] = Host
+| extend ["Minutes old"] = datetime_diff("minute", now(), LastHeartbeat)
+| order by ["Minutes old"] desc
+
+
+// ------------------------------------------------------------------------
+// Data quality - session hosts without data
+// ------------------------------------------------------------------------
+let hosts = dynamic([{SessionHosts}]);
+let shortName = (s:string) { tolower(tostring(split(s, ".")[0])) };
+let reporting = union
+    (Perf | extend Host = shortName(Computer) | distinct Host),
+    (Heartbeat | extend Host = shortName(Computer) | distinct Host);
+print Host = hosts
+| mv-expand Host to typeof(string)
+| where Host != "*"
+| join kind=leftanti reporting on Host
+| project ["Session host without data"] = Host
+

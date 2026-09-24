@@ -1,0 +1,77 @@
+// AVD Sessionhosts Monitoring 2.0 - validation queries
+// Run these in the Log Analytics workspace before you trust the workbook.
+// Blog post: https://www.gettothe.cloud/
+
+// ---------------------------------------------------------------------------
+// 1. Which sources are delivering data, and how fresh are they?
+// Expect rows for Processor Information, Memory, Terminal Services,
+// User Input Delay per Session, RemoteFX Graphics, the FSLogix logs and the WVD tables.
+// ---------------------------------------------------------------------------
+union withsource=Table Perf, Event, WVDAgentHealthStatus, WVDConnectionNetworkData
+| where TimeGenerated > ago(24h)
+| extend Source = coalesce(ObjectName, EventLog, Table)
+| summarize Records = count(), LastRecord = max(TimeGenerated) by Table, Source, CounterName
+| extend MinutesOld = datetime_diff("minute", now(), LastRecord)
+| order by Table asc, Source asc
+
+
+// ---------------------------------------------------------------------------
+// 2. Is every session host sending a heartbeat?
+// A host that is missing here has no working Azure Monitor Agent or no DCR association.
+// ---------------------------------------------------------------------------
+Heartbeat
+| summarize LastHeartbeat = max(TimeGenerated) by Computer
+| extend MinutesOld = datetime_diff("minute", now(), LastHeartbeat)
+| order by MinutesOld desc
+
+
+// ---------------------------------------------------------------------------
+// 3. Are both Data Collection Rules associated with the session hosts?
+// Run this one in Azure Resource Graph Explorer, not in Log Analytics.
+// A host with only one rule in the list is a host with half a picture.
+// ---------------------------------------------------------------------------
+insightsresources
+| where type == "microsoft.insights/datacollectionruleassociations"
+| extend Vm = tolower(tostring(split(id, "/providers/Microsoft.Insights/")[0])),
+         Dcr = tostring(properties.dataCollectionRuleId)
+| where Vm contains "/virtualmachines/"
+| summarize Rules = make_set(Dcr) by Vm
+
+
+// ---------------------------------------------------------------------------
+// 4. Are the host pool diagnostic settings sending all categories?
+// Expect Connection, Error, Checkpoint, HostRegistration, AgentHealthStatus,
+// Management and NetworkData records.
+// ---------------------------------------------------------------------------
+union WVDConnections, WVDErrors, WVDCheckpoints, WVDAgentHealthStatus,
+      WVDHostRegistrations, WVDManagement, WVDConnectionNetworkData
+| where TimeGenerated > ago(24h)
+| summarize Records = count(), LastRecord = max(TimeGenerated) by Type
+| order by Type asc
+
+
+// ---------------------------------------------------------------------------
+// 5. Do the session host names in Perf and the WVD tables match?
+// The workbook normalises both to a lowercase short name. This query shows
+// whether that normalisation is needed in your environment.
+// ---------------------------------------------------------------------------
+let perfHosts = Perf | where TimeGenerated > ago(1h) | distinct Computer;
+let wvdHosts = WVDAgentHealthStatus | where TimeGenerated > ago(1h) | distinct SessionHostName;
+union
+    (perfHosts | project Source = "Perf.Computer", Name = Computer),
+    (wvdHosts | project Source = "WVDAgentHealthStatus.SessionHostName", Name = SessionHostName)
+| extend ShortName = tolower(tostring(split(Name, ".")[0]))
+| order by ShortName asc, Source asc
+
+
+// ---------------------------------------------------------------------------
+// 6. What is the Perf table costing you?
+// Records per counter instance per day. Watch the wildcard instances,
+// User Input Delay per Process in particular.
+// ---------------------------------------------------------------------------
+Perf
+| where TimeGenerated > ago(24h)
+| summarize Records = count(), Instances = dcount(InstanceName), Hosts = dcount(Computer)
+    by ObjectName, CounterName
+| extend RecordsPerHostPerDay = Records / Hosts
+| order by Records desc

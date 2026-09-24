@@ -1,0 +1,571 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "# AVD Sessionhosts Monitoring 2.0"
+      },
+      "name": "title"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "AVD Sessionhosts Monitoring 2.0. Select a workspace, one or more host pools and a time range. The Data quality tab shows whether every source this workbook depends on is delivering data."
+      },
+      "name": "intro"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "e010de1d-6dae-4500-b444-8aa4f5801a83",
+            "version": "KqlParameterItem/1.0",
+            "name": "Workspace",
+            "label": "Log Analytics workspace",
+            "type": 5,
+            "isRequired": true,
+            "multiSelect": false,
+            "quote": "'",
+            "delimiter": ",",
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "resourceTypeFilter": {
+                "microsoft.operationalinsights/workspaces": true
+              }
+            },
+            "timeContext": {
+              "durationMs": 86400000
+            }
+          },
+          {
+            "id": "fcbfbacc-765b-4726-8f6d-bf61e7299c29",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ]
+            }
+          },
+          {
+            "id": "6c489a90-3be1-4e5b-ad44-9ec536443ab3",
+            "version": "KqlParameterItem/1.0",
+            "name": "HostPool",
+            "label": "Host pool",
+            "type": 2,
+            "isRequired": true,
+            "multiSelect": true,
+            "quote": "'",
+            "delimiter": ",",
+            "query": "desktopvirtualizationresources\n| where type =~ 'microsoft.desktopvirtualization/hostpools'\n| project value = tolower(name), label = name\n| order by label asc",
+            "crossComponentResources": [
+              "value::all"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "value": [
+              "value::all"
+            ]
+          },
+          {
+            "id": "aa796431-8947-424e-932b-5422ac439dea",
+            "version": "KqlParameterItem/1.0",
+            "name": "SessionHosts",
+            "label": "Session hosts",
+            "type": 2,
+            "isRequired": false,
+            "multiSelect": true,
+            "quote": "'",
+            "delimiter": ",",
+            "description": "Leave on All to include every session host in the selected host pools.",
+            "query": "desktopvirtualizationresources\n| where type =~ 'microsoft.desktopvirtualization/hostpools/sessionhosts'\n| extend hostPool = tolower(tostring(split(id, '/')[8]))\n| where '*' in ({HostPool}) or hostPool in ({HostPool})\n| extend sessionHost = tostring(split(name, '/')[1])\n| project value = tolower(tostring(split(sessionHost, '.')[0])), label = sessionHost\n| order by label asc",
+            "crossComponentResources": [
+              "value::all"
+            ],
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources",
+            "value": [
+              "value::all"
+            ]
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 11,
+      "content": {
+        "version": "LinkItem/1.0",
+        "style": "tabs",
+        "links": [
+          {
+            "id": "05e63ffc-f90d-4e86-b25f-da962cafd546",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Overview",
+            "subTarget": "overview",
+            "style": "link"
+          },
+          {
+            "id": "15aaf868-1388-4189-9aaa-f108df29cffd",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Session host health",
+            "subTarget": "health",
+            "style": "link"
+          },
+          {
+            "id": "41c098e0-bd94-4b5b-ae08-756f6c46bb9d",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Capacity & density",
+            "subTarget": "capacity",
+            "style": "link"
+          },
+          {
+            "id": "4e21849c-cbbd-442d-af28-6f8cf32cfcd0",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "User experience",
+            "subTarget": "experience",
+            "style": "link"
+          },
+          {
+            "id": "79788943-eeb1-4cb3-8235-2c965f44c447",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Connections & errors",
+            "subTarget": "connections",
+            "style": "link"
+          },
+          {
+            "id": "72eb193f-bde4-4a32-a6ad-85a898d37562",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "FSLogix",
+            "subTarget": "fslogix",
+            "style": "link"
+          },
+          {
+            "id": "3a7c233c-1a44-415c-a2bb-a676219fde20",
+            "cellValue": "SelectedTab",
+            "linkTarget": "parameter",
+            "linkLabel": "Data quality",
+            "subTarget": "quality",
+            "style": "link"
+          }
+        ]
+      },
+      "name": "tabs"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "overview"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nlet health = WVDAgentHealthStatus\n| extend Host = shortName(SessionHostName)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize arg_max(TimeGenerated, Status) by Host;\nlet sessions = Perf\n| where ObjectName == \"Terminal Services\" and CounterName == \"Active Sessions\"\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 15m)\n| summarize Sessions = max(Sessions) by bin_at(TimeGenerated, 15m, now())\n| top 1 by TimeGenerated desc;\nlet delay = Perf\n| where ObjectName == \"User Input Delay per Session\" and CounterName == \"Max Input Delay\"\n| where InstanceName !in (\"Max\", \"Average\")\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize P95 = percentile(CounterValue, 95);\nlet connections = WVDConnections\n| summarize States = make_set(State) by CorrelationId\n| summarize Attempts = count(), Succeeded = countif(set_has_element(States, \"Connected\"));\nunion\n(health | summarize Metric = \"Session hosts\", Value = todouble(count()), Unit = \"hosts\"),\n(health | summarize Metric = \"Available\", Value = todouble(countif(Status == \"Available\")), Unit = \"hosts\"),\n(health | summarize Metric = \"Need attention\", Value = todouble(countif(Status != \"Available\")), Unit = \"hosts\"),\n(sessions | summarize Metric = \"Active sessions\", Value = todouble(max(Sessions)), Unit = \"sessions\"),\n(delay | summarize Metric = \"Input delay P95\", Value = round(max(P95)), Unit = \"ms\"),\n(connections | summarize Metric = \"Connection success\", Value = round(100.0 * max(Succeeded) / max(Attempts), 1), Unit = \"%\")\n",
+              "size": 4,
+              "title": "Summary",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "tiles",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "overview-tiles"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nlet health = WVDAgentHealthStatus\n| extend Host = shortName(SessionHostName)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize arg_max(TimeGenerated, Status, AgentVersion, SessionHostHealthCheckResult) by Host;\nlet perf = Perf\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize\n    CpuAvg = avgif(CounterValue, ObjectName == \"Processor Information\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"),\n    Sessions = maxif(CounterValue, ObjectName == \"Terminal Services\" and CounterName == \"Active Sessions\"),\n    MemoryUsedPct = avgif(CounterValue, ObjectName == \"Memory\" and CounterName =~ \"% Committed Bytes In Use\")\n    by Host;\nlet delay = Perf\n| where ObjectName == \"User Input Delay per Session\" and CounterName == \"Max Input Delay\"\n| where InstanceName !in (\"Max\", \"Average\")\n| extend Host = shortName(Computer)\n| summarize InputDelayP95 = percentile(CounterValue, 95) by Host;\nhealth\n| join kind=leftouter perf on Host\n| join kind=leftouter delay on Host\n| extend FailedChecks = tostring(array_length(parse_json(SessionHostHealthCheckResult)))\n| project\n    [\"Session host\"] = Host,\n    Status,\n    Sessions = tolong(Sessions),\n    [\"CPU avg %\"] = round(CpuAvg, 1),\n    [\"Memory used %\"] = round(MemoryUsedPct, 1),\n    [\"Input delay P95 (ms)\"] = round(InputDelayP95),\n    [\"Agent version\"] = AgentVersion,\n    [\"Last report\"] = TimeGenerated\n| order by Status asc, [\"Input delay P95 (ms)\"] desc\n",
+              "size": 0,
+              "title": "Session hosts",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "overview-table"
+          }
+        ]
+      },
+      "name": "group-overview"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "health"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nWVDAgentHealthStatus\n| extend Host = shortName(SessionHostName)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize Unhealthy = countif(Status != \"Available\"), Reports = count() by Host, bin(TimeGenerated, 1h)\n| extend UnhealthyPct = round(100.0 * Unhealthy / Reports, 1)\n| project TimeGenerated, Host, UnhealthyPct\n| evaluate pivot(Host, max(UnhealthyPct))\n| order by TimeGenerated asc\n",
+              "size": 0,
+              "title": "Unhealthy reports per hour (%)",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "timechart",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "health-heatmap"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nWVDAgentHealthStatus\n| extend Host = shortName(SessionHostName)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| where Status != \"Available\"\n| mv-expand Check = parse_json(SessionHostHealthCheckResult)\n| extend HealthCheck = tostring(Check.HealthCheckName), Result = tostring(Check.HealthCheckResult)\n| where Result != \"HealthCheckSucceeded\"\n| summarize Failures = count(), LastSeen = max(TimeGenerated) by [\"Session host\"] = Host, HealthCheck, Result\n| order by LastSeen desc\n",
+              "size": 0,
+              "title": "Failed health checks",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "health-checks"
+          }
+        ]
+      },
+      "name": "group-health"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "capacity"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nlet cpu = Perf\n| where ObjectName == \"Processor Information\" and CounterName == \"% Processor Time\" and InstanceName == \"_Total\"\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize CpuP95 = percentile(CounterValue, 95) by Host, bin(TimeGenerated, 1h);\nlet sessions = Perf\n| where ObjectName == \"Terminal Services\" and CounterName == \"Active Sessions\"\n| extend Host = shortName(Computer)\n| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 1h);\ncpu\n| join kind=inner sessions on Host, TimeGenerated\n| where Sessions > 0\n| extend CpuPerSession = CpuP95 / Sessions\n| summarize\n    [\"CPU per session %\"] = round(avg(CpuPerSession), 1),\n    [\"Peak sessions\"] = tolong(max(Sessions)),\n    [\"Peak CPU P95 %\"] = round(max(CpuP95), 1)\n    by [\"Session host\"] = Host\n| order by [\"CPU per session %\"] desc\n",
+              "size": 0,
+              "title": "Cost per session",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "capacity-density"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nPerf\n| where ObjectName == \"Terminal Services\" and CounterName == \"Active Sessions\"\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize Sessions = max(CounterValue) by Host, bin(TimeGenerated, 15m)\n| summarize [\"Active sessions\"] = sum(Sessions) by TimeGenerated\n| order by TimeGenerated asc\n",
+              "size": 0,
+              "title": "Active sessions",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "timechart",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "capacity-trend"
+          }
+        ]
+      },
+      "name": "group-capacity"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "experience"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nPerf\n| where ObjectName == \"User Input Delay per Session\" and CounterName == \"Max Input Delay\"\n| where InstanceName !in (\"Max\", \"Average\")\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize P50 = percentile(CounterValue, 50), P95 = percentile(CounterValue, 95) by bin(TimeGenerated, 15m)\n| order by TimeGenerated asc\n",
+              "size": 0,
+              "title": "Input delay over time (ms)",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "timechart",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "experience-delay"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nPerf\n| where ObjectName == \"User Input Delay per Session\" and CounterName == \"Max Input Delay\"\n| where InstanceName !in (\"Max\", \"Average\")\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize\n    [\"Input delay P50 (ms)\"] = round(percentile(CounterValue, 50)),\n    [\"Input delay P95 (ms)\"] = round(percentile(CounterValue, 95)),\n    [\"Input delay max (ms)\"] = round(max(CounterValue))\n    by [\"Session host\"] = Host\n| order by [\"Input delay P95 (ms)\"] desc\n",
+              "size": 0,
+              "title": "Input delay per session host",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "experience-hosts"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nWVDConnectionNetworkData\n| join kind=inner (\n    WVDConnections\n    | where State == \"Connected\"\n    | project CorrelationId, SessionHostName, TransportType\n  ) on CorrelationId\n| extend Host = shortName(SessionHostName)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize\n    [\"RTT P50 (ms)\"] = round(percentile(EstRoundTripTimeInMs, 50)),\n    [\"RTT P95 (ms)\"] = round(percentile(EstRoundTripTimeInMs, 95)),\n    [\"Bandwidth P50 (KBps)\"] = round(percentile(EstAvailableBandwidthKBps, 50)),\n    Measurements = count()\n    by [\"Session host\"] = Host, TransportType\n| order by [\"RTT P95 (ms)\"] desc\n",
+              "size": 0,
+              "title": "Round trip time and bandwidth",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "experience-network"
+          }
+        ]
+      },
+      "name": "group-experience"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "connections"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nWVDConnections\n| summarize States = make_set(State), SessionHostName = take_any(SessionHostName) by CorrelationId\n| extend Succeeded = set_has_element(States, \"Connected\")\n| extend Host = iff(isempty(SessionHostName), \"(no host assigned)\", shortName(SessionHostName))\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts) or Host == \"(no host assigned)\"\n| summarize Attempts = count(), Failed = countif(not(Succeeded)) by [\"Session host\"] = Host\n| extend [\"Success rate %\"] = round(100.0 * (Attempts - Failed) / Attempts, 1)\n| order by [\"Success rate %\"] asc\n",
+              "size": 0,
+              "title": "Connection success per session host",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "connections-success"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "WVDErrors\n| summarize Errors = count(), LastSeen = max(TimeGenerated), Example = take_any(Message)\n    by CodeSymbolic, Source, ServiceError\n| order by Errors desc\n",
+              "size": 0,
+              "title": "Errors",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "connections-errors"
+          }
+        ]
+      },
+      "name": "group-connections"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "fslogix"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nEvent\n| where EventLog startswith \"Microsoft-FSLogix-Apps\"\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| where EventLevelName in (\"Error\", \"Warning\")\n| summarize Events = count(), LastSeen = max(TimeGenerated), Example = take_any(RenderedDescription)\n    by [\"Session host\"] = Host, EventLog, EventID, EventLevelName\n| order by Events desc\n",
+              "size": 0,
+              "title": "FSLogix errors and warnings",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "fslogix-events"
+          }
+        ]
+      },
+      "name": "group-fslogix"
+    },
+    {
+      "type": 12,
+      "conditionalVisibility": {
+        "parameterName": "SelectedTab",
+        "comparison": "isEqualTo",
+        "value": "quality"
+      },
+      "content": {
+        "version": "NotebookGroup/1.0",
+        "groupType": "editable",
+        "items": [
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "union withsource=Table Perf, Event, WVDAgentHealthStatus, WVDConnections, WVDConnectionNetworkData\n| extend Source = coalesce(ObjectName, EventLog, Table)\n| summarize Records = count(), LastRecord = max(TimeGenerated) by Table, Source, CounterName\n| extend [\"Minutes old\"] = datetime_diff(\"minute\", now(), LastRecord)\n| order by Table asc, Source asc\n",
+              "size": 0,
+              "title": "Sources and freshness",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "quality-sources"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nHeartbeat\n| extend Host = shortName(Computer)\n| where array_length(hosts) == 0 or \"*\" in (hosts) or Host in (hosts)\n| summarize LastHeartbeat = max(TimeGenerated), Rules = make_set(Category) by [\"Session host\"] = Host\n| extend [\"Minutes old\"] = datetime_diff(\"minute\", now(), LastHeartbeat)\n| order by [\"Minutes old\"] desc\n",
+              "size": 0,
+              "title": "Heartbeat per session host",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "quality-heartbeat"
+          },
+          {
+            "type": 3,
+            "content": {
+              "version": "KqlItem/1.0",
+              "query": "let hosts = dynamic([{SessionHosts}]);\nlet shortName = (s:string) { tolower(tostring(split(s, \".\")[0])) };\nlet reporting = union\n    (Perf | extend Host = shortName(Computer) | distinct Host),\n    (Heartbeat | extend Host = shortName(Computer) | distinct Host);\nprint Host = hosts\n| mv-expand Host to typeof(string)\n| where Host != \"*\"\n| join kind=leftanti reporting on Host\n| project [\"Session host without data\"] = Host\n",
+              "size": 0,
+              "title": "Session hosts without data",
+              "queryType": 0,
+              "resourceType": "microsoft.operationalinsights/workspaces",
+              "crossComponentResources": [
+                "{Workspace}"
+              ],
+              "visualization": "table",
+              "timeContextFromParameter": "TimeRange"
+            },
+            "name": "quality-silent"
+          }
+        ]
+      },
+      "name": "group-quality"
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [
+    "Azure Monitor"
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
