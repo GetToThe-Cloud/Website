@@ -24,7 +24,7 @@ param paramsNetworks array
 
 // Loop through each network in the paramsNetworks array to create logical networks
 // using the Azure Stack HCI logical network module for Azure Verified Modules.
-module logicalNetworks 'br/public:avm/res/azure-stack-hci/logical-network:0.2.1' = [for (network, index) in paramsNetworks: {
+module logicalNetworks 'br/public:avm/res/azure-stack-hci/logical-network:0.3.0' = [for (network, index) in paramsNetworks: {
   name: 'ln-${network.parName}'
   params: {
     // Required parameters
